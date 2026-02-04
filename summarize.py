@@ -105,14 +105,14 @@ def format_ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:05.2f}"
 
 
-def save_ass(title: str, subtitles: list):
+def save_ass(title: str, subtitles: list, output_subdir: str = "urls"):
     """保存字幕为 ASS 文件"""
     if not subtitles:
         return
     
     # 创建 ass 目录
-    ass_dir = Path("ass")
-    ass_dir.mkdir(exist_ok=True)
+    ass_dir = Path("ass") / output_subdir
+    ass_dir.mkdir(parents=True, exist_ok=True)
     
     # 生成安全的文件名
     safe_title = sanitize_filename(title)
@@ -177,11 +177,11 @@ def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic
         return f"⚠️ 生成总结失败: {e}"
 
 
-def save_summary(title: str, bvid: str, url: str, duration: int, summary: str):
+def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, output_subdir: str = "urls"):
     """保存总结到 markdown 文件"""
     # 创建 summary 目录
-    summary_dir = Path("summary")
-    summary_dir.mkdir(exist_ok=True)
+    summary_dir = Path("summary") / output_subdir
+    summary_dir.mkdir(parents=True, exist_ok=True)
     
     # 生成安全的文件名
     safe_title = sanitize_filename(title)
@@ -210,7 +210,7 @@ def save_summary(title: str, bvid: str, url: str, duration: int, summary: str):
     print(f"  ✅ 已保存: {filepath}")
 
 
-async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None):
+async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls"):
     """处理单个视频"""
     try:
         # 提取 BV 号
@@ -231,23 +231,23 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         subtitle_text, subtitle_raw = await get_subtitle(v)
         
         # 保存 ASS 字幕文件
-        save_ass(title, subtitle_raw)
+        save_ass(title, subtitle_raw, output_subdir)
         
         # 生成总结
         print(f"  🤖 生成总结...")
         summary = summarize_with_claude(subtitle_text, title, client)
         
         # 保存
-        save_summary(title, bvid, url, duration, summary)
+        save_summary(title, bvid, url, duration, summary, output_subdir)
         
     except Exception as e:
         print(f"  ❌ 处理失败: {e}")
 
 
-async def process_by_bvid(bvid: str, client: anthropic.Anthropic, credential: Credential = None):
+async def process_by_bvid(bvid: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls"):
     """通过 BV 号处理视频"""
     url = f"https://www.bilibili.com/video/{bvid}"
-    await process_video(url, client, credential)
+    await process_video(url, client, credential, output_subdir)
 
 
 async def get_user_videos(uid: int, count: int, credential: Credential = None) -> list:
@@ -306,8 +306,11 @@ async def main():
         
         print(f"📋 共有 {len(bvids)} 个视频需要总结")
         
+        # 使用 users/<uid> 作为输出子目录
+        output_subdir = f"users/{args.user}"
+        
         for bvid in bvids:
-            await process_by_bvid(bvid, client, credential)
+            await process_by_bvid(bvid, client, credential, output_subdir)
             await asyncio.sleep(1)
     else:
         # 模式一: 总结 config.toml 中的视频 URL
