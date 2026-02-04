@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""
+Bilibili 视频总结器
+从 config.toml 读取视频 URL，获取字幕并使用 Claude API 生成总结
+输出到 summary/<视频标题>.md
+"""
+
+import asyncio
+import re
+import os
+from datetime import datetime
+from pathlib import Path
+
+import toml
+from dotenv import load_dotenv
+from bilibili_api import video, Credential
+import anthropic
+
+
+def extract_bvid(url: str) -> str:
+    """从 Bilibili URL 中提取 BV 号"""
+    match = re.search(r'BV[a-zA-Z0-9]+', url)
+    if match:
+        return match.group(0)
+    raise ValueError(f"无法从 URL 中提取 BV 号: {url}")
+
+
+def sanitize_filename(title: str) -> str:
+    """清理文件名中的非法字符"""
+    # 替换 Windows/Mac/Linux 不允许的文件名字符
+    return re.sub(r'[<>:"/\\|?*]', '_', title).strip()
+
+
+async def get_subtitle(v: video.Video) -> str:
+    """获取视频字幕内容"""
+    try:
+        # 首先获取视频分P信息以获取 cid
+        pages = await v.get_pages()
+        if not pages:
+            print(f"  ⚠️ 无法获取视频分P信息")
+            return ""
+        
+        # 使用第一个分P的 cid
+        cid = pages[0].get('cid')
+        if not cid:
+            print(f"  ⚠️ 无法获取 cid")
+            return ""
+        
+        # 获取字幕列表
+        player_info = await v.get_player_info(cid=cid)
+        subtitle_info = player_info.get('subtitle', {})
+        
+        if not subtitle_info or not subtitle_info.get('subtitles'):
+            print(f"  ⚠️ 视频没有字幕")
+            return ""
+        
+        # 获取第一个字幕（通常是 AI 生成的中文字幕）
+        subtitle_list = subtitle_info['subtitles']
+        subtitle_url = None
+        
+        # 优先选择中文字幕
+        for sub in subtitle_list:
+            if 'zh' in sub.get('lan', '').lower():
+                subtitle_url = sub.get('subtitle_url', '')
+                break
+        
+        # 如果没有中文字幕，使用第一个
+        if not subtitle_url and subtitle_list:
+            subtitle_url = subtitle_list[0].get('subtitle_url', '')
+        
+        if not subtitle_url:
+            return ""
+        
+        # 确保 URL 包含协议
+        if subtitle_url.startswith('//'):
+            subtitle_url = 'https:' + subtitle_url
+        
+        # 下载字幕内容
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(subtitle_url) as resp:
+                subtitle_data = await resp.json()
+        
+        # 提取字幕文本
+        if 'body' in subtitle_data:
+            texts = [item.get('content', '') for item in subtitle_data['body']]
+            return '\n'.join(texts)
+        
+        return ""
+    
+    except Exception as e:
+        print(f"  ⚠️ 获取字幕失败: {e}")
+        return ""
+
+
+def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic) -> str:
+    """使用 Claude API 生成视频总结"""
+    if not subtitle:
+        return "⚠️ 无法获取字幕，无法生成总结"
+    
+    prompt = f"""请根据以下视频字幕内容，生成一份简洁的视频总结。
+
+视频标题: {title}
+
+字幕内容:
+{subtitle[:15000]}  # 限制字幕长度
+
+请用中文输出总结，格式要求：
+1. 用 3-5 个要点概括视频主要内容
+2. 每个要点简洁明了
+3. 如果有重要结论或关键信息，请特别指出
+"""
+
+    try:
+        message = client.messages.create(
+            model="GLM-4.7-Flash",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return message.content[0].text
+    except Exception as e:
+        return f"⚠️ 生成总结失败: {e}"
+
+
+def save_summary(title: str, bvid: str, url: str, duration: int, summary: str):
+    """保存总结到 markdown 文件"""
+    # 创建 summary 目录
+    summary_dir = Path("summary")
+    summary_dir.mkdir(exist_ok=True)
+    
+    # 生成安全的文件名
+    safe_title = sanitize_filename(title)
+    filepath = summary_dir / f"{safe_title}.md"
+    
+    # 格式化时长
+    minutes, seconds = divmod(duration, 60)
+    duration_str = f"{minutes:02d}:{seconds:02d}"
+    
+    # 生成 markdown 内容
+    content = f"""# {title}
+
+**BV号**: {bvid}
+**视频链接**: https://www.bilibili.com/video/{bvid}
+**时长**: {duration_str}
+**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+## 📝 摘要
+
+{summary}
+"""
+    
+    filepath.write_text(content, encoding='utf-8')
+    print(f"  ✅ 已保存: {filepath}")
+
+
+async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None):
+    """处理单个视频"""
+    try:
+        # 提取 BV 号
+        bvid = extract_bvid(url)
+        print(f"\n🎬 处理视频: {bvid}")
+        
+        # 创建 Video 对象（带登录凭证以获取字幕）
+        v = video.Video(bvid=bvid, credential=credential)
+        
+        # 获取视频信息
+        info = await v.get_info()
+        title = info.get('title', bvid)
+        duration = info.get('duration', 0)
+        print(f"  📌 标题: {title}")
+        
+        # 获取字幕
+        print(f"  📝 获取字幕...")
+        subtitle = await get_subtitle(v)
+        
+        # 生成总结
+        print(f"  🤖 生成总结...")
+        summary = summarize_with_claude(subtitle, title, client)
+        
+        # 保存
+        save_summary(title, bvid, url, duration, summary)
+        
+    except Exception as e:
+        print(f"  ❌ 处理失败: {e}")
+
+
+async def main():
+    # 加载环境变量
+    load_dotenv('.env.local')
+    
+    # 读取配置
+    config = toml.load("config.toml")
+    urls = config.get("summary-videos", [])
+    
+    if not urls:
+        print("❌ config.toml 中没有配置视频 URL")
+        return
+    
+    print(f"📋 共有 {len(urls)} 个视频需要总结")
+    
+    # 初始化 Bilibili 登录凭证（获取字幕需要）
+    sessdata = os.getenv('BILIBILI_SESSION_TOKEN')
+    bili_jct = os.getenv('BILIBILI_BILI_JCT')
+    credential = None
+    if sessdata:
+        credential = Credential(sessdata=sessdata, bili_jct=bili_jct)
+        print("✅ 已加载 Bilibili 登录凭证")
+    else:
+        print("⚠️ 未配置 BILIBILI_SESSION_TOKEN，可能无法获取字幕")
+    
+    # 初始化 Anthropic 客户端
+    client = anthropic.Anthropic(
+        base_url=os.getenv('ANTHROPIC_BASE_URL'),
+        api_key=os.getenv('ANTHROPIC_AUTH_TOKEN')
+    )
+    
+    # 去重 URL
+    unique_urls = list(dict.fromkeys(urls))
+    
+    # 处理每个视频
+    for url in unique_urls:
+        await process_video(url, client, credential)
+        # 添加延迟避免频率限制
+        await asyncio.sleep(1)
+    
+    print("\n✨ 完成!")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

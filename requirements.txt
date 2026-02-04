@@ -1,0 +1,5 @@
+bilibili-api-python>=17.0.0
+aiohttp
+anthropic
+python-dotenv
+toml
