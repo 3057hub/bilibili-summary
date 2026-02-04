@@ -31,20 +31,20 @@ def sanitize_filename(title: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', '_', title).strip()
 
 
-async def get_subtitle(v: video.Video) -> str:
-    """获取视频字幕内容"""
+async def get_subtitle(v: video.Video) -> tuple[str, list]:
+    """获取视频字幕内容，返回 (纯文本, 原始字幕数据)"""
     try:
         # 首先获取视频分P信息以获取 cid
         pages = await v.get_pages()
         if not pages:
             print(f"  ⚠️ 无法获取视频分P信息")
-            return ""
+            return "", []
         
         # 使用第一个分P的 cid
         cid = pages[0].get('cid')
         if not cid:
             print(f"  ⚠️ 无法获取 cid")
-            return ""
+            return "", []
         
         # 获取字幕列表
         player_info = await v.get_player_info(cid=cid)
@@ -52,7 +52,7 @@ async def get_subtitle(v: video.Video) -> str:
         
         if not subtitle_info or not subtitle_info.get('subtitles'):
             print(f"  ⚠️ 视频没有字幕")
-            return ""
+            return "", []
         
         # 获取第一个字幕（通常是 AI 生成的中文字幕）
         subtitle_list = subtitle_info['subtitles']
@@ -69,7 +69,7 @@ async def get_subtitle(v: video.Video) -> str:
             subtitle_url = subtitle_list[0].get('subtitle_url', '')
         
         if not subtitle_url:
-            return ""
+            return "", []
         
         # 确保 URL 包含协议
         if subtitle_url.startswith('//'):
@@ -83,14 +83,64 @@ async def get_subtitle(v: video.Video) -> str:
         
         # 提取字幕文本
         if 'body' in subtitle_data:
-            texts = [item.get('content', '') for item in subtitle_data['body']]
-            return '\n'.join(texts)
+            raw_subtitles = subtitle_data['body']
+            texts = [item.get('content', '') for item in raw_subtitles]
+            return '\n'.join(texts), raw_subtitles
         
-        return ""
+        return "", []
     
     except Exception as e:
         print(f"  ⚠️ 获取字幕失败: {e}")
-        return ""
+        return "", []
+
+
+def format_ass_time(seconds: float) -> str:
+    """将秒数转换为 ASS 时间格式 (H:MM:SS.CC)"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    return f"{hours}:{minutes:02d}:{secs:05.2f}"
+
+
+def save_ass(title: str, subtitles: list):
+    """保存字幕为 ASS 文件"""
+    if not subtitles:
+        return
+    
+    # 创建 ass 目录
+    ass_dir = Path("ass")
+    ass_dir.mkdir(exist_ok=True)
+    
+    # 生成安全的文件名
+    safe_title = sanitize_filename(title)
+    filepath = ass_dir / f"{safe_title}.ass"
+    
+    # ASS 文件头
+    ass_header = """[Script Info]
+Title: {title}
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+""".format(title=title)
+    
+    # 生成字幕行
+    lines = []
+    for item in subtitles:
+        start = format_ass_time(item.get('from', 0))
+        end = format_ass_time(item.get('to', 0))
+        content = item.get('content', '').replace('\n', '\\N')
+        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{content}")
+    
+    # 写入文件
+    filepath.write_text(ass_header + '\n'.join(lines), encoding='utf-8')
+    print(f"  📝 字幕已保存: {filepath}")
 
 
 def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic) -> str:
@@ -175,11 +225,14 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         
         # 获取字幕
         print(f"  📝 获取字幕...")
-        subtitle = await get_subtitle(v)
+        subtitle_text, subtitle_raw = await get_subtitle(v)
+        
+        # 保存 ASS 字幕文件
+        save_ass(title, subtitle_raw)
         
         # 生成总结
         print(f"  🤖 生成总结...")
-        summary = summarize_with_claude(subtitle, title, client)
+        summary = summarize_with_claude(subtitle_text, title, client)
         
         # 保存
         save_summary(title, bvid, url, duration, summary)
