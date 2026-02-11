@@ -3,20 +3,23 @@
 Bilibili 视频总结器
 
 用法:
-  python summarize.py                     # 总结 config.toml 中的视频 URL
-  python summarize.py --user UID --count N  # 总结某 UP主 最新 N 个视频
+  python summarize.py                       # 总结 config.toml 中的视频 URL
+  python summarize.py --user UID --count N   # 总结某 UP主 最新 N 个视频
+  python summarize.py --login                # 扫码登录，自动保存凭证
 """
 
 import argparse
 import asyncio
 import re
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
 import toml
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from bilibili_api import video, user, Credential
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 import anthropic
 
 
@@ -268,15 +271,58 @@ async def get_user_videos(uid: int, count: int, credential: Credential = None) -
     return [v.get('bvid') for v in video_list if v.get('bvid')]
 
 
+async def qr_login():
+    """扫码登录 Bilibili，自动保存凭证到 .env.local"""
+    login = QrCodeLogin()
+    await login.generate_qrcode()
+    
+    # 在终端显示二维码
+    print("\n📱 请使用 Bilibili App 扫描以下二维码登录:\n")
+    print(login.get_qrcode_terminal())
+    print("\n⭐ 扫码后请在手机上确认登录...")
+    
+    # 轮询登录状态
+    while True:
+        state = await login.check_state()
+        
+        if state == QrCodeLoginEvents.DONE:
+            credential = login.get_credential()
+            
+            # 保存到 .env.local
+            env_path = Path('.env.local')
+            set_key(str(env_path), 'BILIBILI_SESSION_TOKEN', credential.sessdata)
+            set_key(str(env_path), 'BILIBILI_BILI_JCT', credential.bili_jct)
+            if credential.ac_time_value:
+                set_key(str(env_path), 'BILIBILI_AC_TIME_VALUE', credential.ac_time_value)
+            
+            print("\n✅ 登录成功！凭证已保存到 .env.local")
+            return
+        
+        elif state == QrCodeLoginEvents.TIMEOUT:
+            print("\n❌ 二维码已过期，请重新运行 --login")
+            return
+        
+        elif state == QrCodeLoginEvents.CONF:
+            print("  📲 已扫码，请在手机上确认...")
+        
+        await asyncio.sleep(2)
+
+
 async def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Bilibili 视频总结器')
     parser.add_argument('--user', type=int, help='UP主 UID')
     parser.add_argument('--count', type=int, default=5, help='总结视频数量 (默认 5)')
+    parser.add_argument('--login', action='store_true', help='扫码登录 Bilibili')
     args = parser.parse_args()
     
     # 加载环境变量
     load_dotenv('.env.local')
+    
+    # 处理登录模式
+    if args.login:
+        await qr_login()
+        return
     
     # 初始化 Bilibili 登录凭证
     sessdata = os.getenv('BILIBILI_SESSION_TOKEN')
