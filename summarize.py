@@ -171,20 +171,39 @@ async def summarize_with_claude(subtitle: str, title: str, client: anthropic.Asy
 3. 如果有重要结论或关键信息，请特别指出
 """
 
-    try:
-        t_start = time.time()
-        message = await client.messages.create(
-            model=model,
-            max_tokens=1024,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-        t_end = time.time()
-        duration = t_end - t_start
-        return message.content[0].text, duration
-    except Exception as e:
-        return f"⚠️ 生成总结失败: {e}", 0.0
+    max_retries = 5
+    base_wait = 2
+
+    for attempt in range(max_retries):
+        try:
+            t_start = time.time()
+            message = await client.messages.create(
+                model=model,
+                max_tokens=1024,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            t_end = time.time()
+            duration = t_end - t_start
+            return message.content[0].text, duration
+            
+        except anthropic.RateLimitError as e:
+            if attempt < max_retries - 1:
+                wait_time = base_wait * (2 ** attempt)
+                print(f"    ⚠️  API 速率限制 (429)，{wait_time}s 后重试... ({attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+            else:
+                return f"⚠️ 生成总结失败 (Rate Limit Exhausted): {e}", 0.0
+                
+        except anthropic.APIError as e:
+             # Handle other API errors
+             return f"⚠️ 生成总结失败 (API Error): {e}", 0.0
+             
+        except Exception as e:
+            return f"⚠️ 生成总结失败: {e}", 0.0
+            
+    return "⚠️ 生成总结失败 (Unknown)", 0.0
 
 
 def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, output_subdir: str = "urls"):
@@ -412,7 +431,7 @@ async def main():
     parser.add_argument('--count', type=int, default=5, help='总结视频数量 (默认 5)')
     parser.add_argument('--login', action='store_true', help='扫码登录 Bilibili')
     parser.add_argument('--favorite', action='store_true', help='总结默认收藏夹的最新视频')
-    parser.add_argument('--concurrency', type=int, default=10, help='并发数量 (默认 10)')
+    parser.add_argument('--concurrency', type=int, default=5, help='并发数量 (默认 5)')
     parser.add_argument('--model', type=str, help='指定使用的 AI 模型')
     parser.add_argument('--benchmark', action='store_true', help='运行模型性能对比测试 (忽略 --model)')
     args = parser.parse_args()
