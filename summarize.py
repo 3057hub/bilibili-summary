@@ -227,6 +227,16 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         info = await v.get_info()
         title = info.get('title', bvid)
         duration = info.get('duration', 0)
+        
+        # 检查总结文件是否已存在
+        summary_dir = Path("summary") / output_subdir
+        safe_title = sanitize_filename(title)
+        summary_path = summary_dir / f"{safe_title}.md"
+        
+        if summary_path.exists():
+            print(f"  ⏭️  已存在，跳过: {title}")
+            return
+
         print(f"  📌 标题: {title}")
         
         # 获取字幕
