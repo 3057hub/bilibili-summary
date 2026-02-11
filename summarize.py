@@ -6,19 +6,21 @@ Bilibili 视频总结器
   python summarize.py                       # 总结 config.toml 中的视频 URL
   python summarize.py --user UID --count N   # 总结某 UP主 最新 N 个视频
   python summarize.py --login                # 扫码登录，自动保存凭证
+  python summarize.py --favorite             # 总结收藏夹中的视频
 """
 
 import argparse
 import asyncio
-import re
 import os
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 
 import toml
 from dotenv import load_dotenv, set_key
-from bilibili_api import video, user, Credential
+from bilibili_api import video, user, favorite_list
+from bilibili_api.utils.network import Credential
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 import anthropic
 
@@ -150,7 +152,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 
-def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic, model: str = "GLM-4.7-Flash") -> tuple[str, float]:
+
+async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = "GLM-4.7-Flash") -> tuple[str, float]:
     """使用 Claude API 生成视频总结，返回 (总结内容, 耗时秒数)"""
     if not subtitle:
         return "⚠️ 无法获取字幕，无法生成总结", 0.0
@@ -170,7 +173,7 @@ def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic
 
     try:
         t_start = time.time()
-        message = client.messages.create(
+        message = await client.messages.create(
             model=model,
             max_tokens=1024,
             messages=[
@@ -217,7 +220,7 @@ def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, o
     print(f"  ✅ 已保存: {filepath}")
 
 
-async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
+async def process_video(url: str, client: anthropic.AsyncAnthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
     """处理单个视频"""
     try:
         # 提取 BV 号
@@ -261,7 +264,7 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
             print(f"  {'-'*40}")
             
             for m in models:
-                _, t = summarize_with_claude(subtitle_text, title, client, model=m)
+                _, t = await summarize_with_claude(subtitle_text, title, client, model=m)
                 print(f"  {m:<25} | {t:.2f}s")
             print(f"  {'-'*40}\n")
             return
@@ -269,7 +272,7 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         # 生成总结
         target_model = model if model else "GLM-4.7-Flash"
         print(f"  🤖 生成总结 (Model: {target_model})...")
-        summary, duration_sec = summarize_with_claude(subtitle_text, title, client, model=target_model)
+        summary, duration_sec = await summarize_with_claude(subtitle_text, title, client, model=target_model)
         print(f"    ⏱️  耗时: {duration_sec:.2f}s")
         
         # 保存
@@ -279,7 +282,7 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         print(f"  ❌ 处理失败: {e}")
 
 
-async def process_by_bvid(bvid: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
+async def process_by_bvid(bvid: str, client: anthropic.AsyncAnthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
     """通过 BV 号处理视频"""
     url = f"https://www.bilibili.com/video/{bvid}"
     await process_video(url, client, credential, output_subdir, model, benchmark)
@@ -301,6 +304,68 @@ async def get_user_videos(uid: int, count: int, credential: Credential = None) -
     video_list = videos_data.get('list', {}).get('vlist', [])
     
     return [v.get('bvid') for v in video_list if v.get('bvid')]
+
+
+async def get_favorite_videos(count: int, credential: Credential) -> list:
+    """获取默认收藏夹视频"""
+    # 获取特定用户的视频列表
+    if not credential:
+        print("⚠️ 获取收藏夹需要登录，请配置 credential")
+        return []
+    
+    # 获取自己的 UID
+    print("👤 获取用户信息...")
+    me = await user.get_self_info(credential)
+    my_uid = me['mid']
+    
+    # 获取收藏夹列表
+    print("📂 获取收藏夹列表...")
+    fav_lists = await favorite_list.get_video_favorite_list(uid=my_uid, credential=credential)
+    
+    target_id = None
+    for f in fav_lists['list']:
+        if f['attr'] == 0 or f['title'] == '默认收藏夹':
+            target_id = f['id']
+            print(f"✅ 找到默认收藏夹: {f['title']} (ID: {target_id})")
+            break
+            
+    if not target_id:
+        # Fallback to first one
+        if fav_lists['list']:
+            target_id = fav_lists['list'][0]['id']
+            print(f"⚠️ 未找到'默认收藏夹'，使用第一个: {fav_lists['list'][0]['title']}")
+        else:
+            print("❌ 未找到任何收藏夹")
+            return []
+
+    # 获取收藏夹内容
+    print(f"📥 获取收藏夹视频 (最新 {count} 个)...")
+    # 注意：B站 API 分页，每页 20 个。如果 count > 20 需要分页处理。这里简化处理，假设 count <= 20
+    # 如果需要更多，需循环获取
+    
+    bvids = []
+    page = 1
+    while len(bvids) < count:
+        content = await favorite_list.get_video_favorite_list_content(
+            media_id=target_id, 
+            page=page, 
+            credential=credential
+        )
+        
+        if not content['medias']:
+            break
+            
+        for media in content['medias']:
+            bvids.append(media['bvid'])
+            if len(bvids) >= count:
+                break
+        
+        page += 1
+        # 防止死循环或过多请求
+        if page > 5: 
+            break
+            
+    return bvids
 
 
 async def qr_login():
@@ -346,7 +411,8 @@ async def main():
     parser.add_argument('--user', type=int, help='UP主 UID')
     parser.add_argument('--count', type=int, default=5, help='总结视频数量 (默认 5)')
     parser.add_argument('--login', action='store_true', help='扫码登录 Bilibili')
-    parser.add_argument('--concurrency', type=int, default=3, help='并发数量 (默认 3)')
+    parser.add_argument('--favorite', action='store_true', help='总结默认收藏夹的最新视频')
+    parser.add_argument('--concurrency', type=int, default=10, help='并发数量 (默认 10)')
     parser.add_argument('--model', type=str, help='指定使用的 AI 模型')
     parser.add_argument('--benchmark', action='store_true', help='运行模型性能对比测试 (忽略 --model)')
     args = parser.parse_args()
@@ -370,7 +436,7 @@ async def main():
         print("⚠️ 未配置 BILIBILI_SESSION_TOKEN，可能无法获取字幕")
     
     # 初始化 Anthropic 客户端
-    client = anthropic.Anthropic(
+    client = anthropic.AsyncAnthropic(
         base_url=os.getenv('ANTHROPIC_BASE_URL'),
         api_key=os.getenv('ANTHROPIC_AUTH_TOKEN')
     )
@@ -388,7 +454,26 @@ async def main():
             await process_by_bvid(bvid, client, credential, output_subdir, model=args.model, benchmark=args.benchmark)
     
     # 根据模式处理
-    if args.user:
+    if args.favorite:
+        # 模式三：总结默认收藏夹视频
+        print(f"\n⭐️ 获取默认收藏夹的最新 {args.count} 个视频...")
+        if not credential:
+             print("❌ 必须登录才能获取收藏夹 (请先运行 --login)")
+             return
+
+        bvids = await get_favorite_videos(args.count, credential)
+        
+        if not bvids:
+            print("❌ 未找到视频")
+            return
+            
+        print(f"📋 共有 {len(bvids)} 个视频需要总结 (并发数: {concurrency})")
+        output_subdir = "favorites"
+        
+        tasks = [bounded_process_by_bvid(bvid, output_subdir) for bvid in bvids]
+        await asyncio.gather(*tasks)
+
+    elif args.user:
         # 模式二: 总结某 UP主 的最新 N 个视频
         print(f"\n📹 获取 UP主 {args.user} 的最新 {args.count} 个视频...")
         bvids = await get_user_videos(args.user, args.count, credential)
