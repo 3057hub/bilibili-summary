@@ -153,7 +153,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 
-async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = "GLM-4.7-Flash") -> tuple[str, float]:
+
+async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = "GLM-4-FlashX-250414") -> tuple[str, float]:
     """使用 Claude API 生成视频总结，返回 (总结内容, 耗时秒数)"""
     if not subtitle:
         return "⚠️ 无法获取字幕，无法生成总结", 0.0
@@ -289,7 +290,7 @@ async def process_video(url: str, client: anthropic.AsyncAnthropic, credential: 
             return
 
         # 生成总结
-        target_model = model if model else "GLM-4.7-Flash"
+        target_model = model if model else "GLM-4-FlashX-250414"
         print(f"  🤖 生成总结 (Model: {target_model})...")
         summary, duration_sec = await summarize_with_claude(subtitle_text, title, client, model=target_model)
         print(f"    ⏱️  耗时: {duration_sec:.2f}s")
@@ -428,10 +429,10 @@ async def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Bilibili 视频总结器')
     parser.add_argument('--user', type=int, help='UP主 UID')
-    parser.add_argument('--count', type=int, default=5, help='总结视频数量 (默认 5)')
+    parser.add_argument('--count', type=int, help='总结视频数量 (默认: UP主=50, 收藏夹=20)')
     parser.add_argument('--login', action='store_true', help='扫码登录 Bilibili')
     parser.add_argument('--favorite', action='store_true', help='总结默认收藏夹的最新视频')
-    parser.add_argument('--concurrency', type=int, default=5, help='并发数量 (默认 5)')
+    parser.add_argument('--concurrency', type=int, default=12, help='并发数量 (默认 12)')
     parser.add_argument('--model', type=str, help='指定使用的 AI 模型')
     parser.add_argument('--benchmark', action='store_true', help='运行模型性能对比测试 (忽略 --model)')
     args = parser.parse_args()
@@ -475,12 +476,13 @@ async def main():
     # 根据模式处理
     if args.favorite:
         # 模式三：总结默认收藏夹视频
-        print(f"\n⭐️ 获取默认收藏夹的最新 {args.count} 个视频...")
+        count = args.count if args.count else 20
+        print(f"\n⭐️ 获取默认收藏夹的最新 {count} 个视频...")
         if not credential:
              print("❌ 必须登录才能获取收藏夹 (请先运行 --login)")
              return
 
-        bvids = await get_favorite_videos(args.count, credential)
+        bvids = await get_favorite_videos(count, credential)
         
         if not bvids:
             print("❌ 未找到视频")
@@ -494,14 +496,15 @@ async def main():
 
     elif args.user:
         # 模式二: 总结某 UP主 的最新 N 个视频
-        print(f"\n📹 获取 UP主 {args.user} 的最新 {args.count} 个视频...")
-        bvids = await get_user_videos(args.user, args.count, credential)
+        count = args.count if args.count else 50
+        print(f"\n📹 获取 UP主 {args.user} 的最新 {count} 个视频...")
+        bvids = await get_user_videos(args.user, count, credential)
         
         if not bvids:
             print("❌ 未找到视频")
             return
         
-        print(f"📋 共有 {len(bvids)} 个视频需要总结 (并发数: {args.concurrency})")
+        print(f"📋 共有 {len(bvids)} 个视频需要总结 (并发数: {concurrency})")
         
         # 使用 users/<uid> 作为输出子目录
         output_subdir = f"users/{args.user}"
