@@ -149,10 +149,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     print(f"  📝 字幕已保存: {filepath}")
 
 
-def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic) -> str:
-    """使用 Claude API 生成视频总结"""
+
+def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic, model: str = "GLM-4.7-Flash") -> tuple[str, float]:
+    """使用 Claude API 生成视频总结，返回 (总结内容, 耗时秒数)"""
     if not subtitle:
-        return "⚠️ 无法获取字幕，无法生成总结"
+        return "⚠️ 无法获取字幕，无法生成总结", 0.0
     
     prompt = f"""请根据以下视频字幕内容，生成一份简洁的视频总结。
 
@@ -168,16 +169,19 @@ def summarize_with_claude(subtitle: str, title: str, client: anthropic.Anthropic
 """
 
     try:
+        t_start = time.time()
         message = client.messages.create(
-            model="GLM-4.7-Flash",
+            model=model,
             max_tokens=1024,
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
-        return message.content[0].text
+        t_end = time.time()
+        duration = t_end - t_start
+        return message.content[0].text, duration
     except Exception as e:
-        return f"⚠️ 生成总结失败: {e}"
+        return f"⚠️ 生成总结失败: {e}", 0.0
 
 
 def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, output_subdir: str = "urls"):
@@ -213,7 +217,7 @@ def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, o
     print(f"  ✅ 已保存: {filepath}")
 
 
-async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls"):
+async def process_video(url: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
     """处理单个视频"""
     try:
         # 提取 BV 号
@@ -228,14 +232,15 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         title = info.get('title', bvid)
         duration = info.get('duration', 0)
         
-        # 检查总结文件是否已存在
-        summary_dir = Path("summary") / output_subdir
-        safe_title = sanitize_filename(title)
-        summary_path = summary_dir / f"{safe_title}.md"
-        
-        if summary_path.exists():
-            print(f"  ⏭️  已存在，跳过: {title}")
-            return
+        # 检查总结文件是否已存在 (benchmark 模式不跳过)
+        if not benchmark:
+            summary_dir = Path("summary") / output_subdir
+            safe_title = sanitize_filename(title)
+            summary_path = summary_dir / f"{safe_title}.md"
+            
+            if summary_path.exists():
+                print(f"  ⏭️  已存在，跳过: {title}")
+                return
 
         print(f"  📌 标题: {title}")
         
@@ -246,9 +251,26 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         # 保存 ASS 字幕文件
         save_ass(title, subtitle_raw, output_subdir)
         
+        if benchmark:
+            # Benchmark 模式：对比多个模型
+            models = ["GLM-4.7-Flash", "GLM-4-FlashX-250414"]
+            print(f"  ⚖️  开始 Benchmark 对比: {models}")
+            
+            print(f"  {'-'*40}")
+            print(f"  {'Model':<25} | {'Time (s)':<10}")
+            print(f"  {'-'*40}")
+            
+            for m in models:
+                _, t = summarize_with_claude(subtitle_text, title, client, model=m)
+                print(f"  {m:<25} | {t:.2f}s")
+            print(f"  {'-'*40}\n")
+            return
+
         # 生成总结
-        print(f"  🤖 生成总结...")
-        summary = summarize_with_claude(subtitle_text, title, client)
+        target_model = model if model else "GLM-4.7-Flash"
+        print(f"  🤖 生成总结 (Model: {target_model})...")
+        summary, duration_sec = summarize_with_claude(subtitle_text, title, client, model=target_model)
+        print(f"    ⏱️  耗时: {duration_sec:.2f}s")
         
         # 保存
         save_summary(title, bvid, url, duration, summary, output_subdir)
@@ -257,10 +279,10 @@ async def process_video(url: str, client: anthropic.Anthropic, credential: Crede
         print(f"  ❌ 处理失败: {e}")
 
 
-async def process_by_bvid(bvid: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls"):
+async def process_by_bvid(bvid: str, client: anthropic.Anthropic, credential: Credential = None, output_subdir: str = "urls", model: str = None, benchmark: bool = False):
     """通过 BV 号处理视频"""
     url = f"https://www.bilibili.com/video/{bvid}"
-    await process_video(url, client, credential, output_subdir)
+    await process_video(url, client, credential, output_subdir, model, benchmark)
 
 
 async def get_user_videos(uid: int, count: int, credential: Credential = None) -> list:
@@ -324,6 +346,9 @@ async def main():
     parser.add_argument('--user', type=int, help='UP主 UID')
     parser.add_argument('--count', type=int, default=5, help='总结视频数量 (默认 5)')
     parser.add_argument('--login', action='store_true', help='扫码登录 Bilibili')
+    parser.add_argument('--concurrency', type=int, default=3, help='并发数量 (默认 3)')
+    parser.add_argument('--model', type=str, help='指定使用的 AI 模型')
+    parser.add_argument('--benchmark', action='store_true', help='运行模型性能对比测试 (忽略 --model)')
     args = parser.parse_args()
     
     # 加载环境变量
@@ -350,6 +375,18 @@ async def main():
         api_key=os.getenv('ANTHROPIC_AUTH_TOKEN')
     )
     
+    # 初始化信号量
+    concurrency = 1 if args.benchmark else args.concurrency  # Benchmark 模式下强制串行
+    sem = asyncio.Semaphore(concurrency)
+    
+    async def bounded_process_video(url, output_subdir="urls"):
+        async with sem:
+            await process_video(url, client, credential, output_subdir, model=args.model, benchmark=args.benchmark)
+
+    async def bounded_process_by_bvid(bvid, output_subdir):
+        async with sem:
+            await process_by_bvid(bvid, client, credential, output_subdir, model=args.model, benchmark=args.benchmark)
+    
     # 根据模式处理
     if args.user:
         # 模式二: 总结某 UP主 的最新 N 个视频
@@ -360,14 +397,14 @@ async def main():
             print("❌ 未找到视频")
             return
         
-        print(f"📋 共有 {len(bvids)} 个视频需要总结")
+        print(f"📋 共有 {len(bvids)} 个视频需要总结 (并发数: {args.concurrency})")
         
         # 使用 users/<uid> 作为输出子目录
         output_subdir = f"users/{args.user}"
         
-        for bvid in bvids:
-            await process_by_bvid(bvid, client, credential, output_subdir)
-            await asyncio.sleep(1)
+        tasks = [bounded_process_by_bvid(bvid, output_subdir) for bvid in bvids]
+        await asyncio.gather(*tasks)
+            
     else:
         # 模式一: 总结 config.toml 中的视频 URL
         config = toml.load("config.toml")
@@ -377,12 +414,11 @@ async def main():
             print("❌ config.toml 中没有配置视频 URL")
             return
         
-        print(f"📋 共有 {len(urls)} 个视频需要总结")
+        print(f"📋 共有 {len(urls)} 个视频需要总结 (并发数: {args.concurrency})")
         
         unique_urls = list(dict.fromkeys(urls))
-        for url in unique_urls:
-            await process_video(url, client, credential)
-            await asyncio.sleep(1)
+        tasks = [bounded_process_video(url) for url in unique_urls]
+        await asyncio.gather(*tasks)
     
     print("\n✨ 完成!")
 
