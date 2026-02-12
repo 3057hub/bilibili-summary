@@ -1024,43 +1024,55 @@ async function retrySummarize(bvid) {
         const taskId = data.task_id;
         readingContent.innerHTML = '<p style="color:var(--text-muted);">⏳ 正在获取字幕...</p>';
 
-        // Listen to SSE for progress
+        // Listen to SSE for progress (server sends named events)
         const evtSrc = new EventSource(`/api/progress/${taskId}`);
-        evtSrc.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                const d = msg.data || {};
 
-                if (msg.event === 'processing') {
-                    readingContent.innerHTML = `<p style="color:var(--text-muted);">⏳ ${d.step || '处理中'}...</p>`;
-                } else if (msg.event === 'completed') {
-                    evtSrc.close();
-                    // Update card badge
-                    const badge = document.getElementById(`badge-${bvid}`);
+        evtSrc.addEventListener('processing', (e) => {
+            try {
+                const d = JSON.parse(e.data);
+                readingContent.innerHTML = `<p style="color:var(--text-muted);">⏳ ${d.step || '处理中'}...</p>`;
+            } catch (_) { }
+        });
+
+        evtSrc.addEventListener('completed', (e) => {
+            evtSrc.close();
+            try {
+                const d = JSON.parse(e.data);
+                const badge = document.getElementById(`badge-${bvid}`);
+                if (d.status === 'no_subtitle') {
                     if (badge) {
-                        if (d.status === 'no_subtitle') {
-                            badge.className = 'summary-badge no_subtitle';
-                            badge.textContent = '无字幕';
-                            readingContent.innerHTML = '<p style="color:var(--warning);">⚠️ 仍然无法获取字幕</p>';
-                        } else {
-                            badge.className = 'summary-badge done';
-                            badge.textContent = '已总结';
-                            // Update Map and reload summary
-                            const vdata = favVideoData.get(bvid);
-                            if (vdata && d.path) {
-                                vdata.summaryPath = d.path;
-                            }
-                            showVideoSummary(bvid, d.path);
-                        }
+                        badge.className = 'summary-badge no_subtitle';
+                        badge.textContent = '无字幕';
                     }
-                } else if (msg.event === 'error') {
-                    evtSrc.close();
-                    readingContent.innerHTML = `<p style="color:var(--error);">重试失败: ${d.message || '未知错误'}</p>`;
-                } else if (msg.event === 'done') {
-                    evtSrc.close();
+                    readingContent.innerHTML = '<p style="color:var(--warning);">⚠️ 仍然无法获取字幕，可稍后再试</p>';
+                } else {
+                    if (badge) {
+                        badge.className = 'summary-badge done';
+                        badge.textContent = '已总结';
+                    }
+                    const vdata = favVideoData.get(bvid);
+                    if (vdata && d.path) {
+                        vdata.summaryPath = d.path;
+                    }
+                    showVideoSummary(bvid, d.path);
                 }
             } catch (_) { }
-        };
+        });
+
+        evtSrc.addEventListener('error', (e) => {
+            evtSrc.close();
+            try {
+                const d = JSON.parse(e.data);
+                readingContent.innerHTML = `<p style="color:var(--error);">重试失败: ${d.message || '未知错误'}</p>`;
+            } catch (_) {
+                readingContent.innerHTML = '<p style="color:var(--error);">连接中断</p>';
+            }
+        });
+
+        evtSrc.addEventListener('done', () => {
+            evtSrc.close();
+        });
+
         evtSrc.onerror = () => {
             evtSrc.close();
         };
