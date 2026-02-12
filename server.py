@@ -22,12 +22,15 @@ import anthropic
 
 from bilibili_api import video, user as bili_user, search
 from bilibili_api.utils.network import Credential
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 
 from summarize import (
     extract_bvid, get_subtitle, save_ass, save_summary,
     summarize_with_claude, get_uid_by_name, get_user_videos,
     get_favorite_videos, sanitize_filename
 )
+from dotenv import set_key
+import base64
 
 # ---------------------------------------------------------------------------
 # Global state
@@ -381,6 +384,75 @@ async def progress_stream(task_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
+
+
+# ---------------------------------------------------------------------------
+# QR Login / Logout
+# ---------------------------------------------------------------------------
+@app.get("/api/login/qr")
+async def qr_login_stream():
+    """SSE stream: generates QR code, polls login state, saves credential."""
+    async def _gen():
+        global credential
+        login = QrCodeLogin()
+        await login.generate_qrcode()
+
+        # Get QR code as base64 PNG
+        pic = login.get_qrcode_picture()
+        img_bytes = pic.content
+        b64 = base64.b64encode(img_bytes).decode('utf-8')
+        yield f"event: qrcode\ndata: {json.dumps({'image': b64})}\n\n"
+
+        # Poll login state
+        while True:
+            try:
+                state = await login.check_state()
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+                break
+
+            if state == QrCodeLoginEvents.DONE:
+                cred = login.get_credential()
+                # Save to .env.local
+                env_path = str(Path('.env.local'))
+                set_key(env_path, 'BILIBILI_SESSION_TOKEN', cred.sessdata)
+                set_key(env_path, 'BILIBILI_BILI_JCT', cred.bili_jct)
+                if cred.ac_time_value:
+                    set_key(env_path, 'BILIBILI_AC_TIME_VALUE', cred.ac_time_value)
+                # Update global credential
+                credential = Credential(
+                    sessdata=cred.sessdata,
+                    bili_jct=cred.bili_jct,
+                    ac_time_value=cred.ac_time_value or ""
+                )
+                yield f"event: done\ndata: {json.dumps({'message': '登录成功'})}\n\n"
+                break
+            elif state == QrCodeLoginEvents.TIMEOUT:
+                yield f"event: timeout\ndata: {json.dumps({'message': '二维码已过期'})}\n\n"
+                break
+            elif state == QrCodeLoginEvents.CONF:
+                yield f"event: scanned\ndata: {json.dumps({'message': '已扫码，请在手机上确认'})}\n\n"
+
+            await asyncio.sleep(2)
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
+@app.post("/api/logout")
+async def logout():
+    """Clear credential and remove from .env.local."""
+    global credential
+    credential = None
+    env_path = Path('.env.local')
+    if env_path.exists():
+        set_key(str(env_path), 'BILIBILI_SESSION_TOKEN', '')
+        set_key(str(env_path), 'BILIBILI_BILI_JCT', '')
+        set_key(str(env_path), 'BILIBILI_AC_TIME_VALUE', '')
+    return {"message": "已注销"}
 
 
 # ---------------------------------------------------------------------------

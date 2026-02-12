@@ -33,12 +33,18 @@ async function checkStatus() {
         const data = await res.json();
         const dot = document.getElementById('statusDot');
         const text = document.getElementById('statusText');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
         if (data.logged_in) {
             dot.className = 'status-dot online';
             text.textContent = 'Bilibili 已登录';
+            loginBtn.style.display = 'none';
+            logoutBtn.style.display = 'flex';
         } else {
             dot.className = 'status-dot offline';
             text.textContent = '未登录 Bilibili';
+            loginBtn.style.display = 'flex';
+            logoutBtn.style.display = 'none';
         }
     } catch {
         document.getElementById('statusDot').className = 'status-dot offline';
@@ -46,6 +52,90 @@ async function checkStatus() {
     }
 }
 checkStatus();
+
+// ---------------------------------------------------------------------------
+// QR Login / Logout
+// ---------------------------------------------------------------------------
+let loginEventSource = null;
+
+function startLogin() {
+    const modal = document.getElementById('loginModal');
+    const qrContainer = document.getElementById('qrContainer');
+    const qrStatus = document.getElementById('qrStatus');
+
+    modal.classList.add('active');
+    qrContainer.innerHTML = '<div class="qr-loading"><span class="spinner"></span> 生成二维码中...</div>';
+    qrStatus.textContent = '请使用 Bilibili App 扫描二维码';
+    qrStatus.className = 'qr-status';
+
+    // Close any existing connection
+    if (loginEventSource) loginEventSource.close();
+
+    loginEventSource = new EventSource('/api/login/qr');
+
+    loginEventSource.addEventListener('qrcode', (e) => {
+        const d = JSON.parse(e.data);
+        qrContainer.innerHTML = `<img src="data:image/png;base64,${d.image}" alt="QR Code">`;
+    });
+
+    loginEventSource.addEventListener('scanned', (e) => {
+        const d = JSON.parse(e.data);
+        qrStatus.textContent = '📲 ' + d.message;
+        qrStatus.className = 'qr-status scanned';
+    });
+
+    loginEventSource.addEventListener('done', (e) => {
+        const d = JSON.parse(e.data);
+        qrStatus.textContent = '✅ ' + d.message;
+        qrStatus.className = 'qr-status success';
+        loginEventSource.close();
+        loginEventSource = null;
+        // Refresh status and close modal after a beat
+        setTimeout(() => {
+            checkStatus();
+            modal.classList.remove('active');
+        }, 1200);
+    });
+
+    loginEventSource.addEventListener('timeout', (e) => {
+        const d = JSON.parse(e.data);
+        qrStatus.textContent = '⏰ ' + d.message;
+        qrStatus.className = 'qr-status error';
+        loginEventSource.close();
+        loginEventSource = null;
+    });
+
+    loginEventSource.addEventListener('error', (e) => {
+        try {
+            const d = JSON.parse(e.data);
+            qrStatus.textContent = '❌ ' + d.message;
+        } catch {
+            qrStatus.textContent = '❌ 连接失败';
+        }
+        qrStatus.className = 'qr-status error';
+        if (loginEventSource) { loginEventSource.close(); loginEventSource = null; }
+    });
+
+    loginEventSource.onerror = () => {
+        // SSE connection error (not our custom error event)
+        if (loginEventSource) { loginEventSource.close(); loginEventSource = null; }
+    };
+}
+
+function closeLoginModal() {
+    document.getElementById('loginModal').classList.remove('active');
+    if (loginEventSource) { loginEventSource.close(); loginEventSource = null; }
+}
+
+async function doLogout() {
+    if (!confirm('确定要退出登录吗？')) return;
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        checkStatus();
+    } catch (err) {
+        alert('注销失败: ' + err.message);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Sidebar: Load browse categories
