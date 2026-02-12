@@ -978,17 +978,15 @@ async function showVideoSummary(bvid, path) {
         if (data.content) {
             // Detect no-subtitle content → show retry button
             const isNoSub = data.content.includes('无法获取字幕');
-            const retryBtn = isNoSub
-                ? `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--accent);border-color:var(--accent);" onclick="retrySummarize('${bvid}')">🔄 重新获取字幕</button>`
-                : '';
-            const headerHtml = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <div style="display:flex;gap:8px;">
-                        ${retryBtn}
-                    </div>
-                    <button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--error);border-color:var(--error);" onclick="unfavoriteFromReading('${bvid}')">✕ 取消收藏</button>
-                </div>`;
-            readingContent.innerHTML = headerHtml + renderMarkdown(data.content);
+            const actions = document.getElementById('favReadingActions');
+            let actionsHtml = '';
+            if (isNoSub) {
+                actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--accent);border-color:var(--accent);" onclick="retrySummarize('${bvid}')">🔄 重试</button>`;
+            }
+            actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--error);border-color:var(--error);" onclick="unfavoriteFromReading('${bvid}')">✕ 取消收藏</button>`;
+            actions.innerHTML = actionsHtml;
+
+            readingContent.innerHTML = renderMarkdown(data.content);
             // Make links in summary open externally
             readingContent.querySelectorAll('a').forEach(a => {
                 a.addEventListener('click', (e) => {
