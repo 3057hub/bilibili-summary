@@ -303,6 +303,7 @@ async function openSummary(encodedPath) {
     const list = document.getElementById('browseList');
     const readingView = document.getElementById('readingView');
     const readingContent = document.getElementById('readingContent');
+    const actions = document.getElementById('readingActions');
 
     try {
         const res = await fetch(`/api/summary/${apiPath}`);
@@ -311,6 +312,18 @@ async function openSummary(encodedPath) {
         list.style.display = 'none';
         readingView.classList.add('active');
         readingContent.innerHTML = renderMarkdown(data.content);
+
+        // Extract bvid from content and show action buttons
+        const bvidMatch = data.content.match(/\*\*BV号\*\*:\s*(BV\w+)/);
+        const bvid = bvidMatch ? bvidMatch[1] : '';
+        const isNoSub = data.content.includes('无法获取字幕');
+        let actionsHtml = '';
+        if (bvid && isNoSub) {
+            actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--accent);border-color:var(--accent);" onclick="retrySummarize('${bvid}')">重试</button>`;
+            actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--success);border-color:var(--success);" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon" style="width:12px;height:12px;"></i> 语音识别总结</button>`;
+        }
+        actions.innerHTML = actionsHtml;
+        if (actionsHtml) lucide.createIcons();
     } catch (err) { alert('加载失败: ' + err.message); }
 }
 
