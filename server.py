@@ -109,12 +109,17 @@ async def progress_generator(task_id: str):
     queue = progress_queues.setdefault(task_id, asyncio.Queue())
     try:
         while True:
-            msg = await asyncio.wait_for(queue.get(), timeout=300)
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                # Send heartbeat to keep SSE connection alive
+                yield ": heartbeat\n\n"
+                continue
             yield f"event: {msg['event']}\ndata: {json.dumps(msg['data'], ensure_ascii=False)}\n\n"
             if msg["event"] == "done":
                 break
-    except asyncio.TimeoutError:
-        yield f"event: done\ndata: {json.dumps({'message': 'timeout'})}\n\n"
+    except Exception:
+        yield f"event: done\ndata: {json.dumps({'message': 'connection_error'})}\n\n"
     finally:
         progress_queues.pop(task_id, None)
 
@@ -196,15 +201,22 @@ async def run_batch(bvids: list[str], model: str, concurrency: int, output_subdi
     async def bounded(bvid):
         async with sem:
             url = f"https://www.bilibili.com/video/{bvid}"
-            r = await process_single_video(url, model, output_subdir, task_id)
-            results.append(r)
+            try:
+                r = await process_single_video(url, model, output_subdir, task_id)
+                results.append(r)
+            except Exception as e:
+                await send_progress(task_id, "error", {"title": bvid, "message": str(e)})
+                results.append({"title": bvid, "status": "error", "message": str(e)})
 
-    await asyncio.gather(*[bounded(bv) for bv in bvids])
+    try:
+        await asyncio.gather(*[bounded(bv) for bv in bvids])
+    except Exception as e:
+        await send_progress(task_id, "error", {"title": "", "message": f"批处理异常: {e}"})
 
-    success = sum(1 for r in results if r and r["status"] == "success")
-    skipped = sum(1 for r in results if r and r["status"] == "skipped")
-    no_sub = sum(1 for r in results if r and r["status"] == "no_subtitle")
-    errors = sum(1 for r in results if r and r["status"] == "error")
+    success = sum(1 for r in results if r and r.get("status") == "success")
+    skipped = sum(1 for r in results if r and r.get("status") == "skipped")
+    no_sub = sum(1 for r in results if r and r.get("status") == "no_subtitle")
+    errors = sum(1 for r in results if r and r.get("status") == "error")
 
     await send_progress(task_id, "done", {
         "total": len(bvids), "success": success, "skipped": skipped,
