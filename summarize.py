@@ -159,17 +159,28 @@ async def summarize_with_claude(subtitle: str, title: str, client: anthropic.Asy
     if not subtitle:
         return "⚠️ 无法获取字幕，无法生成总结", 0.0
     
-    prompt = f"""请根据以下视频字幕内容，生成一份简洁的视频总结。
+    prompt = f"""你是一个专业的视频内容分析师。请根据以下视频字幕，生成一份**详细但有条理**的视频笔记。
 
 视频标题: {title}
 
 字幕内容:
-{subtitle[:15000]}  # 限制字幕长度
+{subtitle[:15000]}
 
-请用中文输出总结，格式要求：
-1. 用 3-5 个要点概括视频主要内容
-2. 每个要点简洁明了
-3. 如果有重要结论或关键信息，请特别指出
+请用中文输出，严格按照以下格式：
+
+## 核心观点
+
+用 3-6 个核心观点概括视频内容。每个观点下面：
+- 先用一句话概括该观点
+- 然后列出作者用来支撑该观点的**具体例子、故事、数据或类比**（如果有的话）
+
+## 金句摘录
+
+提取视频中 2-3 句最有启发性或表达精炼的原话（如果有的话）。
+
+## 行动建议
+
+如果视频包含可操作的建议或方法论，请列出具体的行动步骤。如果视频偏向于分享观点/故事而非方法论，可以省略此部分。
 """
 
     max_retries = 5
@@ -180,7 +191,7 @@ async def summarize_with_claude(subtitle: str, title: str, client: anthropic.Asy
             t_start = time.time()
             message = await client.messages.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
