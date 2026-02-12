@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bilibili 视频总结器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1><span class="icon">📺</span> BiliSummary</h1>
+            <div class="subtitle">Bilibili 视频总结器</div>
+        </div>
+        <nav class="sidebar-nav">
+            <!-- Summarize -->
+            <div class="nav-section">
+                <div class="nav-section-title">总结</div>
+                <div class="nav-item active" data-page="url-page">
+                    <span class="icon">🔗</span> URL 模式
+                </div>
+                <div class="nav-item" data-page="user-page">
+                    <span class="icon">👤</span> UP 主模式
+                </div>
+                <div class="nav-item" data-page="fav-page">
+                    <span class="icon">⭐</span> 收藏夹模式
+                </div>
+            </div>
+            <!-- Browse — dynamically populated -->
+            <div class="nav-section">
+                <div class="nav-section-title">浏览</div>
+                <div id="sidebarBrowse"></div>
+            </div>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="status-dot" id="statusDot"></span>
+            <span class="status-text" id="statusText">检查中...</span>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- URL Page -->
+        <div class="page active" id="url-page">
+            <div class="main-header">
+                <h2>🔗 URL 模式</h2>
+                <p>粘贴 Bilibili 视频链接，一行一个</p>
+            </div>
+            <div class="main-body">
+                <div class="card">
+                    <div class="form-group">
+                        <label>视频链接</label>
+                        <textarea id="urlInput" placeholder="https://www.bilibili.com/video/BV...&#10;https://www.bilibili.com/video/BV..."></textarea>
+                    </div>
+                    <div class="input-row">
+                        <div class="form-group">
+                            <label>模型</label>
+                            <input class="input" id="urlModel" value="GLM-4-FlashX-250414">
+                        </div>
+                        <div class="form-group">
+                            <label>并发数</label>
+                            <input class="input" id="urlConcurrency" type="number" value="12">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="urlSubmit" onclick="submitURL()">🚀 开始总结</button>
+                </div>
+                <div class="progress-area" id="urlProgress">
+                    <div class="card">
+                        <div class="card-title">📊 进度</div>
+                        <div class="progress-bar-container"><div class="progress-bar" id="urlProgressBar"></div></div>
+                        <div class="progress-stats" id="urlStats"></div>
+                        <div class="log-container" id="urlLog"></div>
+                    </div>
+                </div>
+                <div class="results-area" id="urlResults"></div>
+            </div>
+        </div>
+
+        <!-- User Page -->
+        <div class="page" id="user-page">
+            <div class="main-header">
+                <h2>👤 UP 主模式</h2>
+                <p>输入 UP 主的名字或 UID，批量总结视频</p>
+            </div>
+            <div class="main-body">
+                <div class="card">
+                    <div class="form-group">
+                        <label>UP 主名字 / UID</label>
+                        <input class="input" id="userInput" placeholder="例如：成长曲奇 或 3493293337873099">
+                    </div>
+                    <div class="input-row">
+                        <div class="form-group">
+                            <label>视频数量</label>
+                            <input class="input" id="userCount" type="number" value="50">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
+                            <input class="input" id="userModel" value="GLM-4-FlashX-250414">
+                        </div>
+                        <div class="form-group">
+                            <label>并发数</label>
+                            <input class="input" id="userConcurrency" type="number" value="12">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="userSubmit" onclick="submitUser()">🚀 开始总结</button>
+                </div>
+                <div class="progress-area" id="userProgress">
+                    <div class="card">
+                        <div class="card-title">📊 进度</div>
+                        <div class="progress-bar-container"><div class="progress-bar" id="userProgressBar"></div></div>
+                        <div class="progress-stats" id="userStats"></div>
+                        <div class="log-container" id="userLog"></div>
+                    </div>
+                </div>
+                <div class="results-area" id="userResults"></div>
+            </div>
+        </div>
+
+        <!-- Favorites Page -->
+        <div class="page" id="fav-page">
+            <div class="main-header">
+                <h2>⭐ 收藏夹模式</h2>
+                <p>总结默认收藏夹中的最新视频</p>
+            </div>
+            <div class="main-body">
+                <div class="card">
+                    <div class="input-row">
+                        <div class="form-group">
+                            <label>视频数量</label>
+                            <input class="input" id="favCount" type="number" value="20">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
+                            <input class="input" id="favModel" value="GLM-4-FlashX-250414">
+                        </div>
+                        <div class="form-group">
+                            <label>并发数</label>
+                            <input class="input" id="favConcurrency" type="number" value="12">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="favSubmit" onclick="submitFavorites()">🚀 开始总结</button>
+                </div>
+                <div class="progress-area" id="favProgress">
+                    <div class="card">
+                        <div class="card-title">📊 进度</div>
+                        <div class="progress-bar-container"><div class="progress-bar" id="favProgressBar"></div></div>
+                        <div class="progress-stats" id="favStats"></div>
+                        <div class="log-container" id="favLog"></div>
+                    </div>
+                </div>
+                <div class="results-area" id="favResults"></div>
+            </div>
+        </div>
+
+        <!-- Browse Page -->
+        <div class="page" id="browse-page">
+            <div class="main-header" id="browseHeader">
+                <h2 id="browseTitle">📚 浏览总结</h2>
+                <p id="browseSubtitle">选择左侧分类查看</p>
+            </div>
+            <div class="main-body">
+                <div id="browseList"></div>
+                <div class="reading-view" id="readingView">
+                    <div class="back-btn" onclick="closeReading()">← 返回列表</div>
+                    <div class="reading-content" id="readingContent"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,5 +1,7 @@
-bilibili-api-python>=17.0.0
-aiohttp
+bilibili-api-python
 anthropic
 python-dotenv
 toml
+fastapi
+uvicorn
+pywebview
