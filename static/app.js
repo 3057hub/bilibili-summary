@@ -6,7 +6,7 @@
 // Theme: Dark / Light
 // ---------------------------------------------------------------------------
 function initTheme() {
-    const saved = localStorage.getItem('bilisummary-theme') || 'dark';
+    const saved = localStorage.getItem('bilisummary-theme') || 'light';
     applyTheme(saved);
 }
 
