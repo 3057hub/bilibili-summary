@@ -793,6 +793,8 @@ function renderVideoCard(v) {
     favVideoData.set(v.bvid, {
         summaryPath: v.summary_path || null,
         title: v.title,
+        upper: v.upper || '',
+        upperMid: v.upper_mid || 0,
     });
 
     return `
@@ -987,6 +989,29 @@ async function showVideoSummary(bvid, path) {
             actions.innerHTML = actionsHtml;
 
             readingContent.innerHTML = renderMarkdown(data.content);
+
+            // Inject author line if missing from existing summaries
+            const vdata = favVideoData.get(bvid);
+            if (vdata && vdata.upper && !data.content.includes('**作者**:')) {
+                const authorLink = vdata.upperMid
+                    ? `<strong>作者</strong>: <a href="https://space.bilibili.com/${vdata.upperMid}" target="_blank">${escapeHtml(vdata.upper)}</a>`
+                    : `<strong>作者</strong>: ${escapeHtml(vdata.upper)}`;
+                const authorEl = document.createElement('p');
+                authorEl.innerHTML = authorLink;
+                // Insert after 视频链接 paragraph
+                const paragraphs = readingContent.querySelectorAll('p');
+                let inserted = false;
+                for (const p of paragraphs) {
+                    if (p.textContent.includes('视频链接')) {
+                        p.insertAdjacentElement('afterend', authorEl);
+                        inserted = true;
+                        break;
+                    }
+                }
+                if (!inserted && paragraphs.length > 0) {
+                    paragraphs[0].insertAdjacentElement('afterend', authorEl);
+                }
+            }
             // Make links in summary open externally
             readingContent.querySelectorAll('a').forEach(a => {
                 a.addEventListener('click', (e) => {

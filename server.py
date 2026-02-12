@@ -554,6 +554,7 @@ async def list_favorite_videos(fav_id: int, page: int = 1):
                 "cover": m.get('cover', ''),
                 "duration": m.get('duration', 0),
                 "upper": m.get('upper', {}).get('name', ''),
+                "upper_mid": m.get('upper', {}).get('mid', 0),
                 "play_count": m.get('cnt_info', {}).get('play', 0),
                 "has_summary": has_summary or has_nosub,
                 "summary_status": 'done' if has_summary else ('no_subtitle' if has_nosub else 'none'),
