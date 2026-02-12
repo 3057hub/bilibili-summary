@@ -59,7 +59,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'matplotlib', 'numpy', 'pandas', 'scipy',
-        'tkinter', 'PIL', 'cv2',
+        'tkinter', 'cv2',
     ],
     noarchive=False,
     optimize=0,
