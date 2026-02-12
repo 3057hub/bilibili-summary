@@ -154,8 +154,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 
-async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = "GLM-4-FlashX-250414") -> tuple[str, float]:
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "GLM-4-FlashX-250414")
+
+
+async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = None) -> tuple[str, float]:
     """使用 Claude API 生成视频总结，返回 (总结内容, 耗时秒数)"""
+    model = model or DEFAULT_MODEL
     if not subtitle:
         return "⚠️ 无法获取字幕，无法生成总结", 0.0
     
@@ -307,7 +311,7 @@ async def process_video(url: str, client: anthropic.AsyncAnthropic, credential: 
             return
 
         # 生成总结
-        target_model = model if model else "GLM-4-FlashX-250414"
+        target_model = model if model else DEFAULT_MODEL
         print(f"  🤖 生成总结 (Model: {target_model})...")
         summary, duration_sec = await summarize_with_claude(subtitle_text, title, client, model=target_model)
         print(f"    ⏱️  耗时: {duration_sec:.2f}s")

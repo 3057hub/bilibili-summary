@@ -74,33 +74,35 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Bilibili 视频总结器", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "GLM-4-FlashX-250414")
+
 
 # ---------------------------------------------------------------------------
 # Request Models
 # ---------------------------------------------------------------------------
 class SummarizeURLRequest(BaseModel):
     urls: list[str]
-    model: str = "GLM-4-FlashX-250414"
+    model: str = DEFAULT_MODEL
     concurrency: int = 12
 
 
 class SummarizeUserRequest(BaseModel):
     user: str  # UID or name
     count: int = 50
-    model: str = "GLM-4-FlashX-250414"
+    model: str = DEFAULT_MODEL
     concurrency: int = 12
 
 
 class SummarizeFavRequest(BaseModel):
     count: int = 20
-    model: str = "GLM-4-FlashX-250414"
+    model: str = DEFAULT_MODEL
     concurrency: int = 12
 
 
 class SummarizeBvidsRequest(BaseModel):
     bvids: list[str]
     output_subdir: str = "favorites"
-    model: str = "GLM-4-FlashX-250414"
+    model: str = DEFAULT_MODEL
     concurrency: int = 6
 
 
@@ -626,7 +628,7 @@ async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
         task_id = f"retry-{bvid}-{int(time.time()*1000)}"
 
         async def _run():
-            await process_single_video(bvid, "GLM-4-FlashX-250414", output_subdir, task_id)
+            await process_single_video(bvid, DEFAULT_MODEL, output_subdir, task_id)
             await send_progress(task_id, "done", {"total": 1})
 
         asyncio.create_task(_run())
