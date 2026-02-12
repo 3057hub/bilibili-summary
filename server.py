@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ import base64
 # ---------------------------------------------------------------------------
 load_dotenv('.env.local')
 
-progress_queues: dict[str, asyncio.Queue] = {}
+
 credential: Optional[Credential] = None
 ai_client: Optional[anthropic.AsyncAnthropic] = None
 
@@ -98,30 +98,59 @@ class SummarizeFavRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# SSE Progress
+# SSE Progress (event-history based, supports reconnection)
 # ---------------------------------------------------------------------------
+# Each task has: {"events": [...], "notify": asyncio.Event, "done": bool}
+progress_tasks: dict[str, dict] = {}
+
+
+def _ensure_task(task_id: str):
+    if task_id not in progress_tasks:
+        progress_tasks[task_id] = {
+            "events": [],
+            "notify": asyncio.Event(),
+            "done": False,
+        }
+
+
 async def send_progress(task_id: str, event: str, data: dict):
-    if task_id in progress_queues:
-        await progress_queues[task_id].put({"event": event, "data": data})
+    _ensure_task(task_id)
+    task = progress_tasks[task_id]
+    task["events"].append({"event": event, "data": data})
+    if event == "done":
+        task["done"] = True
+        # Schedule cleanup after 5 minutes
+        asyncio.get_event_loop().call_later(300, lambda: progress_tasks.pop(task_id, None))
+    task["notify"].set()
 
 
-async def progress_generator(task_id: str):
-    queue = progress_queues.setdefault(task_id, asyncio.Queue())
-    try:
-        while True:
-            try:
-                msg = await asyncio.wait_for(queue.get(), timeout=15)
-            except asyncio.TimeoutError:
-                # Send heartbeat to keep SSE connection alive
-                yield ": heartbeat\n\n"
-                continue
-            yield f"event: {msg['event']}\ndata: {json.dumps(msg['data'], ensure_ascii=False)}\n\n"
+async def progress_generator(task_id: str, last_id: int = -1):
+    _ensure_task(task_id)
+    cursor = last_id + 1  # Start from where the client left off
+
+    while True:
+        task = progress_tasks.get(task_id)
+        if not task:
+            break
+
+        # Yield any events we haven't sent yet
+        while cursor < len(task["events"]):
+            msg = task["events"][cursor]
+            yield f"id: {cursor}\nevent: {msg['event']}\ndata: {json.dumps(msg['data'], ensure_ascii=False)}\n\n"
             if msg["event"] == "done":
-                break
-    except Exception:
-        yield f"event: done\ndata: {json.dumps({'message': 'connection_error'})}\n\n"
-    finally:
-        progress_queues.pop(task_id, None)
+                return
+            cursor += 1
+
+        # If done flag is set and we've sent all events, exit
+        if task["done"]:
+            break
+
+        # Wait for new events or send heartbeat
+        task["notify"].clear()
+        try:
+            await asyncio.wait_for(task["notify"].wait(), timeout=15)
+        except asyncio.TimeoutError:
+            yield ": heartbeat\n\n"
 
 
 # ---------------------------------------------------------------------------
@@ -452,9 +481,10 @@ async def summarize_favorites(req: SummarizeFavRequest):
 
 
 @app.get("/api/progress/{task_id}")
-async def progress_stream(task_id: str):
+async def progress_stream(task_id: str, request: Request):
+    last_id = int(request.headers.get("Last-Event-ID", "-1"))
     return StreamingResponse(
-        progress_generator(task_id),
+        progress_generator(task_id, last_id=last_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )

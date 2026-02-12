@@ -351,7 +351,7 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------------------------------------------------------------------
-// SSE Progress Listener
+// SSE Progress (auto-reconnect via fetch + ReadableStream)
 // ---------------------------------------------------------------------------
 function listenProgress(taskId, prefix) {
     const progressArea = document.getElementById(`${prefix}Progress`);
@@ -371,73 +371,122 @@ function listenProgress(taskId, prefix) {
 
     let total = 0, completed = 0;
     const completedPaths = [];
+    let lastEventId = -1;
+    let isDone = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 10;
 
-    const es = new EventSource(`/api/progress/${taskId}`);
+    function handleEvent(eventType, data) {
+        let d;
+        try { d = JSON.parse(data); } catch { return; }
 
-    es.addEventListener('start', (e) => {
-        const d = JSON.parse(e.data);
-        total = d.total;
-        addLog(logEl, `🚀 开始处理 ${d.total} 个视频 (并发: ${d.concurrency}, 模型: ${d.model})`, 'info');
-    });
-
-    es.addEventListener('info', (e) => {
-        const d = JSON.parse(e.data);
-        addLog(logEl, `ℹ️  ${d.message}`, 'info');
-    });
-
-    es.addEventListener('processing', (e) => {
-        const d = JSON.parse(e.data);
-        addLog(logEl, `⏳ ${d.title} — ${d.step}`, '');
-    });
-
-    es.addEventListener('skip', (e) => {
-        const d = JSON.parse(e.data);
-        completed++;
-        updateProgress(progressBar, statsEl, completed, total);
-        addLog(logEl, `⏭️  已存在，跳过: ${d.title}`, 'skip');
-        if (d.path) {
-            completedPaths.push({ title: d.title, path: d.path, status: 'skipped' });
+        switch (eventType) {
+            case 'start':
+                total = d.total;
+                addLog(logEl, `🚀 开始处理 ${d.total} 个视频 (并发: ${d.concurrency}, 模型: ${d.model})`, 'info');
+                break;
+            case 'info':
+                addLog(logEl, `ℹ️  ${d.message}`, 'info');
+                break;
+            case 'processing':
+                addLog(logEl, `⏳ ${d.title} — ${d.step}`, '');
+                break;
+            case 'skip':
+                completed++;
+                updateProgress(progressBar, statsEl, completed, total);
+                addLog(logEl, `⏭️  已存在，跳过: ${d.title}`, 'skip');
+                if (d.path) completedPaths.push({ title: d.title, path: d.path, status: 'skipped' });
+                break;
+            case 'completed':
+                completed++;
+                updateProgress(progressBar, statsEl, completed, total);
+                if (d.status === 'no_subtitle') {
+                    addLog(logEl, `⚠️  无字幕: ${d.title}`, 'warning');
+                } else {
+                    addLog(logEl, `✅ ${d.title} (${d.duration_sec}s)`, 'success');
+                }
+                if (d.path) completedPaths.push({ title: d.title, path: d.path, status: d.status, duration: d.duration_sec });
+                break;
+            case 'error':
+                completed++;
+                updateProgress(progressBar, statsEl, completed, total);
+                addLog(logEl, `❌ ${d.title || ''}: ${d.message}`, 'error');
+                break;
+            case 'done':
+                isDone = true;
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '🚀 开始总结';
+                addLog(logEl, `✨ 完成! 成功: ${d.success} | 跳过: ${d.skipped} | 无字幕: ${d.no_subtitle} | 失败: ${d.errors}`, 'info');
+                progressBar.style.width = '100%';
+                showInlineResults(resultsArea, completedPaths);
+                loadSidebarBrowse();
+                break;
         }
-    });
+    }
 
-    es.addEventListener('completed', (e) => {
-        const d = JSON.parse(e.data);
-        completed++;
-        updateProgress(progressBar, statsEl, completed, total);
-        if (d.status === 'no_subtitle') {
-            addLog(logEl, `⚠️  无字幕: ${d.title}`, 'warning');
-        } else {
-            addLog(logEl, `✅ ${d.title} (${d.duration_sec}s)`, 'success');
+    async function connectSSE() {
+        if (isDone) return;
+
+        try {
+            const resp = await fetch(`/api/progress/${taskId}`, {
+                headers: { 'Last-Event-ID': String(lastEventId) }
+            });
+
+            if (!resp.ok || !resp.body) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+
+            retryCount = 0; // Reset on successful connect
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const blocks = buffer.split('\n\n');
+                buffer = blocks.pop(); // Keep incomplete block
+
+                for (const block of blocks) {
+                    if (!block.trim() || block.trim().startsWith(':')) continue; // Skip heartbeats
+
+                    let eventType = 'message';
+                    let eventData = '';
+                    let eventId = null;
+
+                    for (const line of block.split('\n')) {
+                        if (line.startsWith('event: ')) eventType = line.slice(7);
+                        else if (line.startsWith('data: ')) eventData = line.slice(6);
+                        else if (line.startsWith('id: ')) eventId = parseInt(line.slice(4));
+                    }
+
+                    if (eventId !== null) lastEventId = eventId;
+                    if (eventData) handleEvent(eventType, eventData);
+                    if (isDone) return;
+                }
+            }
+        } catch (err) {
+            // Connection error — ignore if already done
         }
-        if (d.path) {
-            completedPaths.push({ title: d.title, path: d.path, status: d.status, duration: d.duration_sec });
+
+        // Auto-reconnect if not done
+        if (!isDone && retryCount < MAX_RETRIES) {
+            retryCount++;
+            addLog(logEl, `🔄 重连中... (${retryCount}/${MAX_RETRIES})`, 'warning');
+            await new Promise(r => setTimeout(r, 2000));
+            return connectSSE();
         }
-    });
 
-    es.addEventListener('error', (e) => {
-        const d = JSON.parse(e.data);
-        completed++;
-        updateProgress(progressBar, statsEl, completed, total);
-        addLog(logEl, `❌ ${d.title || ''}: ${d.message}`, 'error');
-    });
+        if (!isDone) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '🚀 开始总结';
+            addLog(logEl, '❌ 连接中断，可重新点击开始总结', 'error');
+        }
+    }
 
-    es.addEventListener('done', (e) => {
-        const d = JSON.parse(e.data);
-        es.close();
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '🚀 开始总结';
-        addLog(logEl, `✨ 完成! 成功: ${d.success} | 跳过: ${d.skipped} | 无字幕: ${d.no_subtitle} | 失败: ${d.errors}`, 'info');
-        progressBar.style.width = '100%';
-        showInlineResults(resultsArea, completedPaths);
-        loadSidebarBrowse(); // Refresh sidebar
-    });
-
-    es.onerror = () => {
-        es.close();
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '🚀 开始总结';
-        addLog(logEl, '❌ 连接中断', 'error');
-    };
+    connectSSE();
 }
 
 // ---------------------------------------------------------------------------
