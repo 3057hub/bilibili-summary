@@ -1148,3 +1148,134 @@ async function unfavoriteFromReading(bvid) {
 function showPage(pageId) {
     switchToPage(pageId, null);
 }
+
+// ---------------------------------------------------------------------------
+// Settings & Model Selection
+// ---------------------------------------------------------------------------
+let settingsLoaded = false;
+
+async function loadSettings() {
+    try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        document.getElementById('settingsBaseUrl').value = data.base_url || '';
+        document.getElementById('settingsToken').placeholder = data.auth_token_masked || '输入 API Token';
+        document.getElementById('settingsToken').value = '';
+        settingsLoaded = true;
+        // Auto-load models on first visit
+        loadModels();
+    } catch (err) {
+        console.error('加载设置失败:', err);
+    }
+}
+
+async function saveSettings() {
+    const statusEl = document.getElementById('settingsSaveStatus');
+    const baseUrl = document.getElementById('settingsBaseUrl').value.trim();
+    const token = document.getElementById('settingsToken').value.trim();
+
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = '保存中...';
+
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_url: baseUrl,
+                auth_token: token,
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            statusEl.style.color = 'var(--success)';
+            statusEl.textContent = '✅ 已保存';
+            // Reload to show masked token
+            setTimeout(() => loadSettings(), 500);
+        } else {
+            statusEl.style.color = 'var(--error)';
+            statusEl.textContent = '❌ 保存失败: ' + (data.error || '');
+        }
+    } catch (err) {
+        statusEl.style.color = 'var(--error)';
+        statusEl.textContent = '❌ 保存失败: ' + err.message;
+    }
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+
+async function loadModels() {
+    const listEl = document.getElementById('modelList');
+    listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">⏳ 加载中...</p>';
+
+    try {
+        const res = await fetch('/api/models');
+        if (!res.ok) {
+            const err = await res.json();
+            listEl.innerHTML = `<p style="color:var(--error);font-size:13px;">❌ ${err.error || '加载失败'}</p>`;
+            return;
+        }
+        const data = await res.json();
+        const models = data.models || [];
+        const current = data.current || '';
+
+        if (models.length === 0) {
+            listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">没有可用模型</p>';
+            return;
+        }
+
+        listEl.innerHTML = models.map(m => {
+            const isActive = m.id === current;
+            return `<div class="model-item${isActive ? ' active' : ''}" onclick="selectModel('${m.id}', this)">
+                <div class="model-name">${m.id}</div>
+                <div class="model-owner">${m.owned_by || ''}</div>
+                ${isActive ? '<span class="model-check">✓</span>' : ''}
+            </div>`;
+        }).join('');
+
+    } catch (err) {
+        listEl.innerHTML = `<p style="color:var(--error);font-size:13px;">❌ ${err.message}</p>`;
+    }
+}
+
+async function selectModel(modelId, el) {
+    // Visual feedback
+    document.querySelectorAll('.model-item').forEach(i => {
+        i.classList.remove('active');
+        const check = i.querySelector('.model-check');
+        if (check) check.remove();
+    });
+    el.classList.add('active');
+    el.insertAdjacentHTML('beforeend', '<span class="model-check">✓</span>');
+
+    // Save to backend
+    try {
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ default_model: modelId })
+        });
+    } catch (err) {
+        console.error('保存模型失败:', err);
+    }
+}
+
+function toggleTokenVisibility() {
+    const input = document.getElementById('settingsToken');
+    const btn = document.getElementById('toggleTokenBtn');
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁';
+    }
+}
+
+// Load settings when navigating to settings page
+const origSwitchToPage = switchToPage;
+switchToPage = function (pageId, navEl) {
+    origSwitchToPage(pageId, navEl);
+    if (pageId === 'settings-page' && !settingsLoaded) {
+        loadSettings();
+    }
+};

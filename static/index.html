@@ -42,6 +42,9 @@
                 </div>
             </nav>
             <div class="sidebar-footer">
+                <div class="nav-item" data-page="settings-page" style="margin-bottom:8px;">
+                    <span class="icon">⚙️</span> 设置
+                </div>
                 <div class="status-row">
                     <span class="status-dot" id="statusDot"></span>
                     <span class="status-text" id="statusText">检查中...</span>
@@ -170,6 +173,46 @@
                     <div class="reading-view" id="readingView">
                         <div class="back-btn" onclick="closeReading()">← 返回列表</div>
                         <div class="reading-content" id="readingContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div class="page" id="settings-page">
+                <div class="main-header">
+                    <h2>⚙️ 设置</h2>
+                    <p>API 配置与模型选择</p>
+                </div>
+                <div class="main-body">
+                    <div class="card">
+                        <div class="card-title">🔑 API 配置</div>
+                        <div class="form-group">
+                            <label>API Base URL</label>
+                            <input class="input" id="settingsBaseUrl"
+                                placeholder="https://open.bigmodel.cn/api/anthropic">
+                        </div>
+                        <div class="form-group">
+                            <label>API Token</label>
+                            <div style="display:flex;gap:8px;">
+                                <input class="input" id="settingsToken" type="password" placeholder="输入 API Token"
+                                    style="flex:1;">
+                                <button class="btn btn-secondary" onclick="toggleTokenVisibility()"
+                                    style="padding:6px 10px;font-size:12px;" id="toggleTokenBtn">👁</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="saveSettings()" style="margin-top:8px;">💾
+                            保存配置</button>
+                        <div id="settingsSaveStatus" style="margin-top:8px;font-size:13px;"></div>
+                    </div>
+                    <div class="card" style="margin-top:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div class="card-title" style="margin:0;">🤖 可用模型</div>
+                            <button class="btn btn-secondary" onclick="loadModels()"
+                                style="padding:4px 12px;font-size:12px;">刷新列表</button>
+                        </div>
+                        <div id="modelList" style="margin-top:12px;">
+                            <p style="color:var(--text-muted);font-size:13px;">点击「刷新列表」获取可用模型</p>
+                        </div>
                     </div>
                 </div>
             </div>
