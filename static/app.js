@@ -40,6 +40,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(item => {
 function switchToPage(pageId, navEl) {
     // Clear all active states
     document.querySelectorAll('.nav-item, .nav-child').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.fav-folder-item').forEach(n => n.classList.remove('active'));
     // Set active on clicked element
     if (navEl) navEl.classList.add('active');
     // Show page
@@ -75,6 +76,7 @@ async function checkStatus() {
     }
 }
 checkStatus();
+loadFavoriteFolders();
 
 // ---------------------------------------------------------------------------
 // QR Login / Logout
@@ -611,18 +613,306 @@ async function submitUser() {
     } catch (err) { alert('请求失败: ' + err.message); }
 }
 
-async function submitFavorites() {
-    const count = parseInt(document.getElementById('favCount').value) || 20;
-    const model = document.getElementById('favModel').value;
-    const concurrency = parseInt(document.getElementById('favConcurrency').value) || 12;
+// ---------------------------------------------------------------------------
+// Favorites Browser
+// ---------------------------------------------------------------------------
+let currentFavId = null;
+let currentFavPage = 1;
+let favHasMore = false;
+
+async function loadFavoriteFolders() {
+    const container = document.getElementById('sidebarFavorites');
+    if (!container) return;
+
     try {
-        const res = await fetch('/api/summarize/favorites', {
+        const res = await fetch('/api/favorites/list');
+        const data = await res.json();
+        if (data.error) {
+            container.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted);">未登录</div>';
+            return;
+        }
+
+        container.innerHTML = data.folders.map(f => `
+            <div class="fav-folder-item" data-fav-id="${f.id}" onclick="selectFavoriteFolder(${f.id}, '${escapeHtml(f.title)}')">
+                <span class="folder-name">${escapeHtml(f.title)}</span>
+                <span class="folder-count">${f.count}</span>
+            </div>
+        `).join('');
+    } catch (err) {
+        container.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted);">加载失败</div>';
+    }
+}
+
+function selectFavoriteFolder(favId, title) {
+    currentFavId = favId;
+    currentFavPage = 1;
+
+    // Highlight active folder
+    document.querySelectorAll('.fav-folder-item').forEach(el => el.classList.remove('active'));
+    const active = document.querySelector(`.fav-folder-item[data-fav-id="${favId}"]`);
+    if (active) active.classList.add('active');
+
+    // Switch to fav-page
+    showPage('fav-page');
+
+    // Update header
+    document.getElementById('favBrowseTitle').textContent = `⭐ ${title}`;
+    document.getElementById('favBrowseSubtitle').textContent = '加载中...';
+
+    // Clear and load
+    document.getElementById('favVideoGrid').innerHTML = '';
+    document.getElementById('favAutoProgress').innerHTML = '';
+    document.getElementById('favReadingView').style.display = 'none';
+
+    loadFavoriteVideos(favId, 1, false);
+}
+
+async function loadFavoriteVideos(favId, page, append) {
+    const grid = document.getElementById('favVideoGrid');
+    const loadMore = document.getElementById('favLoadMore');
+
+    try {
+        const res = await fetch(`/api/favorites/${favId}/videos?page=${page}`);
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('favBrowseSubtitle').textContent = data.error;
+            return;
+        }
+
+        const videos = data.videos || [];
+        currentFavPage = data.page;
+        favHasMore = data.has_more;
+
+        document.getElementById('favBrowseSubtitle').textContent = `共 ${videos.length} 个视频 (第 ${page} 页)`;
+        loadMore.style.display = favHasMore ? '' : 'none';
+
+        const html = videos.map(v => renderVideoCard(v)).join('');
+        if (append) {
+            grid.innerHTML += html;
+        } else {
+            grid.innerHTML = html;
+        }
+
+        // Auto-summarize videos that don't have summaries
+        const unsummarized = videos.filter(v => v.summary_status === 'none').map(v => v.bvid);
+        if (unsummarized.length > 0) {
+            autoSummarizeVideos(unsummarized);
+        }
+
+    } catch (err) {
+        document.getElementById('favBrowseSubtitle').textContent = '加载失败: ' + err.message;
+    }
+}
+
+function renderVideoCard(v) {
+    const durationStr = formatDuration(v.duration);
+    const playStr = formatPlayCount(v.play_count);
+    const badgeClass = v.summary_status;
+    const badgeText = {
+        'done': '已总结',
+        'no_subtitle': '无字幕',
+        'none': '未总结',
+    }[v.summary_status] || '未总结';
+
+    const onclick = v.has_summary
+        ? `showVideoSummary('${v.bvid}', '${escapeHtml(v.summary_path || '')}')`
+        : `openExternal('https://www.bilibili.com/video/${v.bvid}')`;
+
+    return `
+        <div class="video-card" id="card-${v.bvid}" data-bvid="${v.bvid}" onclick="${onclick}">
+            <div class="cover-wrapper">
+                <img src="${v.cover}" alt="" loading="lazy" referrerpolicy="no-referrer">
+                <span class="duration-badge">${durationStr}</span>
+                <span class="summary-badge ${badgeClass}" id="badge-${v.bvid}">${badgeText}</span>
+            </div>
+            <div class="card-info">
+                <div class="card-title" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</div>
+                <div class="card-meta">
+                    <span class="upper-name">${escapeHtml(v.upper)}</span>
+                    <span class="play-count">▶ ${playStr}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function formatDuration(seconds) {
+    if (!seconds) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatPlayCount(count) {
+    if (!count) return '0';
+    if (count >= 10000) return (count / 10000).toFixed(1) + '万';
+    return String(count);
+}
+
+async function autoSummarizeVideos(bvids) {
+    const progressEl = document.getElementById('favAutoProgress');
+    progressEl.innerHTML = `
+        <div>🔄 正在自动总结 ${bvids.length} 个视频...</div>
+        <div class="mini-log" id="favMiniLog"></div>
+    `;
+
+    // Mark cards as summarizing
+    bvids.forEach(bvid => {
+        const badge = document.getElementById(`badge-${bvid}`);
+        if (badge) {
+            badge.className = 'summary-badge summarizing';
+            badge.textContent = '总结中';
+        }
+    });
+
+    try {
+        const res = await fetch('/api/favorites/summarize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ count, model, concurrency })
+            body: JSON.stringify({ bvids, output_subdir: 'favorites' })
         });
         const data = await res.json();
-        if (data.error) { alert(data.error); return; }
-        listenProgress(data.task_id, 'fav');
-    } catch (err) { alert('请求失败: ' + err.message); }
+        if (!data.task_id) {
+            progressEl.innerHTML = '';
+            return;
+        }
+
+        // Listen to SSE for auto-summarize progress
+        listenAutoSummarize(data.task_id, progressEl);
+    } catch (err) {
+        progressEl.innerHTML = `<div style="color:var(--error);">自动总结失败: ${err.message}</div>`;
+    }
+}
+
+function listenAutoSummarize(taskId, progressEl) {
+    const miniLog = document.getElementById('favMiniLog');
+    let lastEventId = -1;
+    let isDone = false;
+    let retryCount = 0;
+
+    async function connectSSE() {
+        if (isDone) return;
+        try {
+            const resp = await fetch(`/api/progress/${taskId}`, {
+                headers: { 'Last-Event-ID': String(lastEventId) }
+            });
+            if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+            retryCount = 0;
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const blocks = buffer.split('\n\n');
+                buffer = blocks.pop();
+
+                for (const block of blocks) {
+                    if (!block.trim() || block.trim().startsWith(':')) continue;
+                    let eventType = 'message', eventData = '', eventId = null;
+                    for (const line of block.split('\n')) {
+                        if (line.startsWith('event: ')) eventType = line.slice(7);
+                        else if (line.startsWith('data: ')) eventData = line.slice(6);
+                        else if (line.startsWith('id: ')) eventId = parseInt(line.slice(4));
+                    }
+                    if (eventId !== null) lastEventId = eventId;
+
+                    let d;
+                    try { d = JSON.parse(eventData); } catch { continue; }
+
+                    if (eventType === 'completed') {
+                        const badge = document.getElementById(`badge-${d.bvid}`);
+                        if (badge) {
+                            if (d.status === 'no_subtitle') {
+                                badge.className = 'summary-badge no_subtitle';
+                                badge.textContent = '无字幕';
+                            } else {
+                                badge.className = 'summary-badge done';
+                                badge.textContent = '已总结';
+                                // Make card clickable to read summary
+                                const card = document.getElementById(`card-${d.bvid}`);
+                                if (card && d.path) {
+                                    card.setAttribute('onclick', `showVideoSummary('${d.bvid}', '${d.path}')`);
+                                }
+                            }
+                        }
+                        if (miniLog) {
+                            const icon = d.status === 'no_subtitle' ? '⚠️' : '✅';
+                            miniLog.innerHTML += `<div class="log-line">${icon} ${escapeHtml(d.title)}</div>`;
+                            miniLog.scrollTop = miniLog.scrollHeight;
+                        }
+                    } else if (eventType === 'skip') {
+                        // Already summarized
+                    } else if (eventType === 'error') {
+                        const badge = document.getElementById(`badge-${d.bvid || ''}`);
+                        if (badge) {
+                            badge.className = 'summary-badge none';
+                            badge.textContent = '失败';
+                        }
+                    } else if (eventType === 'done') {
+                        isDone = true;
+                        progressEl.innerHTML = `<div style="color:var(--success);">✨ 自动总结完成</div>`;
+                        setTimeout(() => { progressEl.innerHTML = ''; }, 3000);
+                        return;
+                    }
+                }
+            }
+        } catch (err) { /* connection error */ }
+
+        if (!isDone && retryCount < 5) {
+            retryCount++;
+            await new Promise(r => setTimeout(r, 2000));
+            return connectSSE();
+        }
+    }
+    connectSSE();
+}
+
+function loadMoreFavoriteVideos() {
+    if (currentFavId && favHasMore) {
+        loadFavoriteVideos(currentFavId, currentFavPage + 1, true);
+    }
+}
+
+async function showVideoSummary(bvid, path) {
+    const readingView = document.getElementById('favReadingView');
+    const readingContent = document.getElementById('favReadingContent');
+    const grid = document.getElementById('favVideoGrid');
+    const loadMore = document.getElementById('favLoadMore');
+
+    readingContent.innerHTML = '<p style="color:var(--text-muted);">加载中...</p>';
+    grid.style.display = 'none';
+    loadMore.style.display = 'none';
+    readingView.style.display = '';
+
+    try {
+        const res = await fetch(`/api/summary/${path}`);
+        const data = await res.json();
+        if (data.content) {
+            readingContent.innerHTML = marked.parse(data.content);
+            // Make links in summary open externally
+            readingContent.querySelectorAll('a').forEach(a => {
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    openExternal(a.href);
+                });
+            });
+        } else {
+            readingContent.innerHTML = '<p style="color:var(--error);">无法加载总结</p>';
+        }
+    } catch (err) {
+        readingContent.innerHTML = `<p style="color:var(--error);">加载失败: ${err.message}</p>`;
+    }
+}
+
+function closeFavReading() {
+    document.getElementById('favReadingView').style.display = 'none';
+    document.getElementById('favVideoGrid').style.display = '';
+    document.getElementById('favLoadMore').style.display = favHasMore ? '' : 'none';
+}
+
+function showPage(pageId) {
+    switchToPage(pageId, null);
 }

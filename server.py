@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import anthropic
 
-from bilibili_api import video, user as bili_user, search
+from bilibili_api import video, user as bili_user, search, favorite_list
 from bilibili_api.utils.network import Credential
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 
@@ -95,6 +95,13 @@ class SummarizeFavRequest(BaseModel):
     count: int = 20
     model: str = "GLM-4-FlashX-250414"
     concurrency: int = 12
+
+
+class SummarizeBvidsRequest(BaseModel):
+    bvids: list[str]
+    output_subdir: str = "favorites"
+    model: str = "GLM-4-FlashX-250414"
+    concurrency: int = 6
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +482,96 @@ async def summarize_favorites(req: SummarizeFavRequest):
             return
 
         await run_batch(bvids, req.model, req.concurrency, "favorites", task_id)
+
+    asyncio.create_task(_run())
+    return {"task_id": task_id}
+
+
+# ---------------------------------------------------------------------------
+# Favorites Browser APIs
+# ---------------------------------------------------------------------------
+@app.get("/api/favorites/list")
+async def list_favorites():
+    """Return all favorite folders for the logged-in user."""
+    if not credential:
+        return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})
+
+    try:
+        me = await bili_user.get_self_info(credential)
+        my_uid = me['mid']
+        fav_data = await favorite_list.get_video_favorite_list(uid=my_uid, credential=credential)
+
+        folders = []
+        for f in fav_data.get('list', []):
+            folders.append({
+                "id": f['id'],
+                "title": f['title'],
+                "count": f.get('media_count', 0),
+                "is_default": f.get('attr', 1) == 0,
+            })
+        return {"folders": folders}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/favorites/{fav_id}/videos")
+async def list_favorite_videos(fav_id: int, page: int = 1):
+    """Return videos in a favorite folder with cover images and summary status."""
+    if not credential:
+        return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})
+
+    try:
+        content = await favorite_list.get_video_favorite_list_content(
+            media_id=fav_id, page=page, credential=credential
+        )
+
+        videos = []
+        for m in content.get('medias', []) or []:
+            bvid = m.get('bvid', '')
+            title = m.get('title', '')
+            safe_title = sanitize_filename(title)
+
+            # Check if summary exists
+            normal_path = Path("summary") / "favorites" / f"{safe_title}.md"
+            nosub_path = Path("summary") / "favorites" / "no_subtitle" / f"{safe_title}.md"
+            has_summary = normal_path.exists()
+            has_nosub = nosub_path.exists()
+            summary_path = None
+            if has_summary:
+                summary_path = f"favorites/{safe_title}.md"
+            elif has_nosub:
+                summary_path = f"favorites/no_subtitle/{safe_title}.md"
+
+            videos.append({
+                "bvid": bvid,
+                "title": title,
+                "cover": m.get('cover', ''),
+                "duration": m.get('duration', 0),
+                "upper": m.get('upper', {}).get('name', ''),
+                "play_count": m.get('cnt_info', {}).get('play', 0),
+                "has_summary": has_summary or has_nosub,
+                "summary_status": 'done' if has_summary else ('no_subtitle' if has_nosub else 'none'),
+                "summary_path": summary_path,
+            })
+
+        has_more = content.get('has_more', False)
+        return {"videos": videos, "has_more": has_more, "page": page}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/favorites/summarize")
+async def summarize_favorite_bvids(req: SummarizeBvidsRequest):
+    """Summarize specific BVIDs from favorites (auto-trigger from browse)."""
+    if not credential:
+        return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})
+    if not req.bvids:
+        return {"task_id": None, "message": "无需总结"}
+
+    task_id = f"fav-auto-{int(time.time()*1000)}"
+
+    async def _run():
+        await run_batch(req.bvids, req.model, req.concurrency, req.output_subdir, task_id)
 
     asyncio.create_task(_run())
     return {"task_id": task_id}
