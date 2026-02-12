@@ -593,13 +593,12 @@ async function submitURL() {
     const text = document.getElementById('urlInput').value.trim();
     if (!text) return;
     const urls = text.split('\n').map(u => u.trim()).filter(Boolean);
-    const model = document.getElementById('urlModel').value;
     const concurrency = parseInt(document.getElementById('urlConcurrency').value) || 12;
     try {
         const res = await fetch('/api/summarize/url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ urls, model, concurrency })
+            body: JSON.stringify({ urls, concurrency })
         });
         const data = await res.json();
         if (data.error) { alert(data.error); return; }
@@ -611,13 +610,12 @@ async function submitUser() {
     const userVal = document.getElementById('userInput').value.trim();
     if (!userVal) return;
     const count = parseInt(document.getElementById('userCount').value) || 50;
-    const model = document.getElementById('userModel').value;
     const concurrency = parseInt(document.getElementById('userConcurrency').value) || 12;
     try {
         const res = await fetch('/api/summarize/user', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: userVal, count, model, concurrency })
+            body: JSON.stringify({ user: userVal, count, concurrency })
         });
         const data = await res.json();
         if (data.error) { alert(data.error); return; }
@@ -1201,6 +1199,7 @@ async function loadSettings() {
         document.getElementById('settingsBaseUrl').value = data.base_url || '';
         document.getElementById('settingsToken').placeholder = data.auth_token_masked || '输入 API Token';
         document.getElementById('settingsToken').value = '';
+        document.getElementById('settingsModel').value = data.default_model || '';
         settingsLoaded = true;
         // Auto-load models on first visit
         loadModels();
@@ -1213,6 +1212,7 @@ async function saveSettings() {
     const statusEl = document.getElementById('settingsSaveStatus');
     const baseUrl = document.getElementById('settingsBaseUrl').value.trim();
     const token = document.getElementById('settingsToken').value.trim();
+    const defaultModel = document.getElementById('settingsModel').value.trim();
 
     statusEl.style.color = 'var(--text-muted)';
     statusEl.textContent = '保存中...';
@@ -1224,6 +1224,7 @@ async function saveSettings() {
             body: JSON.stringify({
                 base_url: baseUrl,
                 auth_token: token,
+                default_model: defaultModel,
             })
         });
         const data = await res.json();
@@ -1294,6 +1295,8 @@ async function selectModel(modelId, el) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ default_model: modelId })
         });
+        // Update the manual input field
+        document.getElementById('settingsModel').value = modelId;
     } catch (err) {
         console.error('保存模型失败:', err);
     }
