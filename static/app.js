@@ -437,7 +437,8 @@ function showCategory(type, navEl) {
     document.getElementById('browse-page').classList.add('active');
 
     // Update header
-    document.getElementById('browseTitle').textContent = `${cat.icon} ${cat.label}`;
+    document.getElementById('browseTitle').innerHTML = `<i data-lucide="${cat.icon}" class="lucide-icon"></i> ${escapeHtml(cat.label)}`;
+    lucide.createIcons({ nodes: [document.getElementById('browseTitle')] });
     document.getElementById('browseSubtitle').textContent = `共 ${cat.items.length} 篇总结`;
 
     // Render card grid
@@ -1015,7 +1016,10 @@ function escapeAttr(text) {
 
 function safeHttpUrl(rawUrl) {
     try {
-        const parsed = new URL(rawUrl);
+        const normalized = String(rawUrl || '').trim();
+        if (!normalized) return null;
+        const withScheme = normalized.startsWith('//') ? `https:${normalized}` : normalized;
+        const parsed = new URL(withScheme);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
             return null;
         }

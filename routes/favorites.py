@@ -78,10 +78,14 @@ async def list_favorite_videos(fav_id: int, page: int = 1):
             elif has_nosub:
                 summary_path = f"favorites/no_subtitle/{safe_title}.md"
 
+            cover = m.get('cover', '') or ''
+            if isinstance(cover, str) and cover.startswith('//'):
+                cover = f'https:{cover}'
+
             videos.append({
                 "bvid": bvid,
                 "title": title,
-                "cover": m.get('cover', ''),
+                "cover": cover,
                 "duration": m.get('duration', 0),
                 "upper": m.get('upper', {}).get('name', ''),
                 "upper_mid": m.get('upper', {}).get('mid', 0),
