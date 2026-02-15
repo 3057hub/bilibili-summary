@@ -5,3 +5,5 @@ toml
 fastapi
 uvicorn
 pywebview
+aiohttp
+av

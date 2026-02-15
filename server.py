@@ -800,27 +800,42 @@ async def asr_summarize(bvid: str, output_subdir: str = "favorites"):
 
             async def transcribe_one(idx, path):
                 async with semaphore:
-                    form = aiohttp.FormData()
-                    form.add_field('model', 'glm-asr-2512')
-                    form.add_field('stream', 'false')
-                    form.add_field('file', open(path, 'rb'), filename=f'seg{idx}.wav', content_type='audio/wav')
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            asr_endpoint,
-                            data=form,
-                            headers={"Authorization": f"Bearer {api_key}"},
-                            timeout=aiohttp.ClientTimeout(total=120),
-                        ) as resp:
-                            resp_text = await resp.text()
-                            completed[0] += 1
-                            if resp.status != 200:
-                                print(f"[ASR seg {idx}] FAILED: {resp_text[:200]}")
-                                return  # skip failed segments
-                            chunk_result = json.loads(resp_text)
-                            text = chunk_result.get('text', '')
-                            if text:
-                                results[idx] = text
-                            print(f"[ASR seg {idx}] OK ({completed[0]}/{num_chunks})")
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            form = aiohttp.FormData()
+                            form.add_field('model', 'glm-asr-2512')
+                            form.add_field('stream', 'false')
+                            form.add_field('file', open(path, 'rb'), filename=f'seg{idx}.wav', content_type='audio/wav')
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(
+                                    asr_endpoint,
+                                    data=form,
+                                    headers={"Authorization": f"Bearer {api_key}"},
+                                    timeout=aiohttp.ClientTimeout(total=120),
+                                ) as resp:
+                                    resp_text = await resp.text()
+                                    completed[0] += 1
+                                    if resp.status == 200:
+                                        chunk_result = json.loads(resp_text)
+                                        text = chunk_result.get('text', '')
+                                        if text:
+                                            results[idx] = text
+                                        print(f"[ASR seg {idx}] OK ({completed[0]}/{num_chunks})")
+                                        return
+                                    elif resp.status == 429 or resp.status >= 500:
+                                        # Retryable error
+                                        wait = 2 ** attempt
+                                        print(f"[ASR seg {idx}] Retry {attempt+1}/{max_retries} after {wait}s: HTTP {resp.status}")
+                                        await asyncio.sleep(wait)
+                                    else:
+                                        print(f"[ASR seg {idx}] FAILED: {resp_text[:200]}")
+                                        return  # non-retryable
+                        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                            wait = 2 ** attempt
+                            print(f"[ASR seg {idx}] Network error, retry {attempt+1}/{max_retries} after {wait}s: {e}")
+                            await asyncio.sleep(wait)
+                    print(f"[ASR seg {idx}] FAILED after {max_retries} retries")
 
             try:
                 tasks = [transcribe_one(i, p) for i, p in enumerate(chunk_paths)]

@@ -322,8 +322,19 @@ async function openSummary(encodedPath) {
             actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--accent);border-color:var(--accent);" onclick="retrySummarize('${bvid}')">重试</button>`;
             actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--success);border-color:var(--success);" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon" style="width:12px;height:12px;"></i> 语音识别总结</button>`;
         }
+        if (bvid) {
+            actionsHtml += `<button class="btn-secondary" style="padding:5px 12px;font-size:12px;color:var(--info);border-color:var(--info);" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon" style="width:12px;height:12px;"></i> B站打开</button>`;
+        }
         actions.innerHTML = actionsHtml;
         if (actionsHtml) lucide.createIcons();
+
+        // Make links in summary open externally
+        readingContent.querySelectorAll('a').forEach(a => {
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                openExternal(a.href);
+            });
+        });
     } catch (err) { alert('加载失败: ' + err.message); }
 }
 
@@ -758,7 +769,7 @@ function selectFavoriteFolder(favId, title) {
 
     // Clear and load — reset display states
     const grid = document.getElementById('favVideoGrid');
-    grid.innerHTML = '';
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><span class="spinner"></span> 加载中...</div>';
     grid.style.display = '';
     document.getElementById('favAutoProgress').innerHTML = '';
     document.getElementById('favReadingView').style.display = 'none';
