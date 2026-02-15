@@ -97,17 +97,23 @@ def _resolve_summary_file(path: str) -> Path | None:
 
 
 _BVID_RE = re.compile(r"\*\*BV号\*\*:\s*(BV[0-9A-Za-z]+)")
+_TITLE_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _cover_cache: dict[str, str] = {}
 _MAX_COVER_LOOKUPS_PER_REQUEST = 40
 
 
-def _extract_bvid_from_summary(md_path: Path) -> str:
+def _extract_summary_info(md_path: Path) -> tuple[str, str]:
+    """Extract (bvid, title) from summary markdown content."""
     try:
         text = md_path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
-        return ""
-    match = _BVID_RE.search(text)
-    return match.group(1) if match else ""
+        return "", ""
+
+    bvid_match = _BVID_RE.search(text)
+    title_match = _TITLE_RE.search(text)
+    bvid = bvid_match.group(1) if bvid_match else ""
+    title = title_match.group(1).strip() if title_match else ""
+    return bvid, title
 
 
 def _build_summary_item(md_path: Path, summary_root: Path) -> dict:
@@ -118,21 +124,29 @@ def _build_summary_item(md_path: Path, summary_root: Path) -> dict:
         "no_subtitle": "no_subtitle" in str(rel),
         "bvid": "",
         "cover": "",
+        "duration": 0,
+        "author_name": "",
     }
 
     meta_path = md_path.with_suffix(".meta.json")
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            item["name"] = meta.get("title", "") or item["name"]
             item["bvid"] = meta.get("bvid", "") or ""
             item["cover"] = meta.get("cover_url", "") or ""
+            item["duration"] = meta.get("duration", 0) or 0
+            item["author_name"] = meta.get("author_name", "") or ""
             if isinstance(item["cover"], str) and item["cover"].startswith("//"):
                 item["cover"] = "https:" + item["cover"]
         except Exception:
             pass
 
     if not item["bvid"]:
-        item["bvid"] = _extract_bvid_from_summary(md_path)
+        md_bvid, md_title = _extract_summary_info(md_path)
+        item["bvid"] = md_bvid
+        if md_title:
+            item["name"] = md_title
 
     if item["bvid"] and item["bvid"] in _cover_cache and not item["cover"]:
         item["cover"] = _cover_cache[item["bvid"]]

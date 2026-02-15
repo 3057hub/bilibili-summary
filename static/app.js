@@ -32,6 +32,8 @@ initTheme();
 let summariesData = null;
 let browseViewMode = localStorage.getItem('bilisummary-browse-view') || 'thumb';
 let currentBrowseItems = [];
+let favViewMode = localStorage.getItem('bilisummary-fav-view') || 'thumb';
+let currentFavVideos = [];
 
 // ---------------------------------------------------------------------------
 // Navigation — static pages
@@ -287,7 +289,7 @@ function showUserVideos(uid, navEl) {
     renderBrowseItems(currentBrowseItems);
 }
 
-function setBrowseViewMode(mode, triggerEl = null) {
+function setBrowseViewMode(mode) {
     if (mode !== 'thumb' && mode !== 'compact') return;
     browseViewMode = mode;
     localStorage.setItem('bilisummary-browse-view', mode);
@@ -311,58 +313,117 @@ function renderBrowseItems(items) {
     if (browseViewMode === 'compact') {
         list.innerHTML = `<div class="browse-compact-list">${items.map(item => renderBrowseCompactItem(item)).join('')}</div>`;
     } else {
-        list.innerHTML = `<div class="browse-grid">${items.map(item => renderBrowseCard(item)).join('')}</div>`;
+        // Use the same card size/style as favorites for visual consistency.
+        list.innerHTML = `<div class="video-grid">${items.map(item => renderBrowseCard(item)).join('')}</div>`;
     }
     lucide.createIcons({ nodes: [list] });
 }
 
-// ---------------------------------------------------------------------------
-// Browse: Render a summary card for the browse grid
-// ---------------------------------------------------------------------------
-function renderBrowseCard(item) {
-    const badgeClass = item.no_subtitle ? 'no_subtitle' : 'done';
-    const badgeText = item.no_subtitle ? '无字幕' : '已总结';
-    const cover = safeHttpUrl(item.cover || '');
-    const bvidText = item.bvid ? item.bvid : 'BV 未记录';
+function summaryBadge(status) {
+    const badgeClass = status === 'no_subtitle' ? 'no_subtitle' : (status || 'done');
+    const badgeTextMap = { done: '已总结', no_subtitle: '无字幕', none: '未总结', summarizing: '总结中' };
+    return { badgeClass, badgeText: badgeTextMap[badgeClass] || '已总结' };
+}
 
-    const coverHtml = cover
-        ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-        : `<div class="browse-cover-placeholder"><i data-lucide="image-off" class="lucide-icon" style="width:20px;height:20px;"></i></div>`;
+function renderSharedThumbCard({
+    id = '',
+    dataAttrs = '',
+    title = '',
+    cover = '',
+    duration = '',
+    badgeId = '',
+    badgeClass = 'done',
+    badgeText = '已总结',
+    metaLeft = '',
+    metaRight = '',
+    actionButtonHtml = '',
+    onClick = '',
+}) {
+    const safeCover = safeHttpUrl(cover || '');
+    const coverHtml = safeCover
+        ? `<img src="${escapeAttr(safeCover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<div class="cover-fallback"><i data-lucide="image-off" class="lucide-icon" style="width:18px;height:18px;"></i></div>`;
 
     return `
-        <div class="browse-thumb-card" onclick="openSummary('${encodePath(item.path)}')">
-            <div class="browse-cover-wrapper">
+        <div class="video-card" ${id ? `id="${id}"` : ''} ${dataAttrs} ${onClick ? `onclick="${onClick}"` : ''}>
+            <div class="cover-wrapper">
                 ${coverHtml}
-                <span class="browse-status-badge ${badgeClass}">${badgeText}</span>
+                ${actionButtonHtml}
+                ${duration ? `<span class="duration-badge">${duration}</span>` : ''}
+                <span class="summary-badge ${badgeClass}" ${badgeId ? `id="${badgeId}"` : ''}>${badgeText}</span>
             </div>
-            <div class="browse-thumb-info">
-                <div class="browse-thumb-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                <div class="browse-thumb-meta">${escapeHtml(bvidText)}</div>
+            <div class="card-info">
+                <div class="card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="card-meta">
+                    <span class="upper-name">${escapeHtml(metaLeft)}</span>
+                    <span class="play-count">${escapeHtml(metaRight)}</span>
+                </div>
             </div>
         </div>
     `;
 }
 
-function renderBrowseCompactItem(item) {
-    const badgeClass = item.no_subtitle ? 'no_subtitle' : 'done';
-    const badgeText = item.no_subtitle ? '无字幕' : '已总结';
-    const cover = safeHttpUrl(item.cover || '');
-    const bvidText = item.bvid ? item.bvid : 'BV 未记录';
-
-    const coverHtml = cover
-        ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+function renderSharedCompactItem({
+    bvid = '',
+    title = '',
+    cover = '',
+    meta = '',
+    badgeId = '',
+    badgeClass = 'done',
+    badgeText = '已总结',
+    actionButtonHtml = '',
+    onClick = '',
+    extraClass = '',
+}) {
+    const safeCover = safeHttpUrl(cover || '');
+    const coverHtml = safeCover
+        ? `<img src="${escapeAttr(safeCover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
         : `<div class="browse-compact-placeholder"><i data-lucide="image-off" class="lucide-icon" style="width:14px;height:14px;"></i></div>`;
 
     return `
-        <div class="browse-compact-item" onclick="openSummary('${encodePath(item.path)}')">
+        <div class="browse-compact-item ${extraClass}" data-bvid="${escapeAttr(bvid)}" ${onClick ? `onclick="${onClick}"` : ''}>
             <div class="browse-compact-cover">${coverHtml}</div>
             <div class="browse-compact-main">
-                <div class="browse-compact-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                <div class="browse-compact-meta">${escapeHtml(bvidText)}</div>
+                <div class="browse-compact-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="browse-compact-meta">${escapeHtml(meta)}</div>
             </div>
-            <span class="browse-inline-badge ${badgeClass}">${badgeText}</span>
+            <span class="browse-inline-badge ${badgeClass}" ${badgeId ? `id="${badgeId}"` : ''}>${badgeText}</span>
+            ${actionButtonHtml}
         </div>
     `;
+}
+
+function renderBrowseCard(item) {
+    const { badgeClass, badgeText } = summaryBadge(item.no_subtitle ? 'no_subtitle' : 'done');
+    const duration = formatDuration(item.duration || 0);
+    const metaLeft = item.author_name || '本地总结';
+    const metaRight = item.bvid || 'BV 未记录';
+
+    return renderSharedThumbCard({
+        dataAttrs: `data-path="${escapeAttr(encodePath(item.path))}"`,
+        title: item.name || item.bvid || '未命名视频',
+        cover: item.cover || '',
+        duration,
+        badgeClass,
+        badgeText,
+        metaLeft,
+        metaRight,
+        onClick: `openSummary('${encodePath(item.path)}')`,
+    });
+}
+
+function renderBrowseCompactItem(item) {
+    const { badgeClass, badgeText } = summaryBadge(item.no_subtitle ? 'no_subtitle' : 'done');
+    const compactMeta = `${item.author_name || '本地总结'} · ${item.bvid || 'BV 未记录'}`;
+    return renderSharedCompactItem({
+        bvid: item.bvid || '',
+        title: item.name || item.bvid || '未命名视频',
+        cover: item.cover || '',
+        meta: compactMeta,
+        badgeClass,
+        badgeText,
+        onClick: `openSummary('${encodePath(item.path)}')`,
+    });
 }
 
 setBrowseViewMode(browseViewMode);
@@ -853,13 +914,13 @@ favGrid.addEventListener('click', (e) => {
     const unfavBtn = e.target.closest('.unfav-btn');
     if (unfavBtn) {
         e.stopPropagation();
-        const card = unfavBtn.closest('.video-card');
+        const card = unfavBtn.closest('[data-bvid]');
         const bvid = card.dataset.bvid;
         unfavoriteVideo(bvid, card);
         return;
     }
 
-    const card = e.target.closest('.video-card');
+    const card = e.target.closest('.video-card, .fav-compact-item');
     if (!card) return;
 
     const bvid = card.dataset.bvid;
@@ -876,6 +937,7 @@ function selectFavoriteFolder(favId, title) {
     currentFavId = favId;
     currentFavPage = 1;
     pendingSummarizeBvids = [];
+    currentFavVideos = [];
 
     // Highlight active folder
     document.querySelectorAll('.fav-folder-item').forEach(el => el.classList.remove('active'));
@@ -897,6 +959,7 @@ function selectFavoriteFolder(favId, title) {
     document.getElementById('favAutoProgress').innerHTML = '';
     document.getElementById('favReadingView').style.display = 'none';
     document.getElementById('favLoadMore').style.display = 'none';
+    setFavViewMode(favViewMode);
 
     loadFavoriteVideos(favId, 1, false);
 }
@@ -916,17 +979,12 @@ async function loadFavoriteVideos(favId, page, append) {
         const videos = data.videos || [];
         currentFavPage = data.page;
         favHasMore = data.has_more;
+        currentFavVideos = append ? [...currentFavVideos, ...videos] : videos;
 
-        document.getElementById('favBrowseSubtitle').textContent = `共 ${videos.length} 个视频 (第 ${page} 页)`;
+        document.getElementById('favBrowseSubtitle').textContent = `共 ${currentFavVideos.length} 个视频 (第 ${page} 页)`;
         loadMore.style.display = favHasMore ? '' : 'none';
 
-        const html = videos.map(v => renderVideoCard(v)).join('');
-        if (append) {
-            grid.innerHTML += html;
-        } else {
-            grid.innerHTML = html;
-        }
-        lucide.createIcons({ nodes: [grid] });
+        renderFavoriteItems(currentFavVideos);
 
         // Prepare manual summarize action for unsummarized videos.
         const unsummarized = videos.filter(v => v.summary_status === 'none').map(v => v.bvid);
@@ -943,15 +1001,41 @@ async function loadFavoriteVideos(favId, page, append) {
     }
 }
 
+function setFavViewMode(mode) {
+    if (mode !== 'thumb' && mode !== 'compact') return;
+    favViewMode = mode;
+    localStorage.setItem('bilisummary-fav-view', mode);
+
+    const toggle = document.getElementById('favViewToggle');
+    if (toggle) {
+        toggle.querySelectorAll('.fav-view-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === mode);
+        });
+    }
+
+    if (currentFavVideos.length > 0) {
+        renderFavoriteItems(currentFavVideos);
+    }
+}
+
+function renderFavoriteItems(videos) {
+    const grid = document.getElementById('favVideoGrid');
+    if (!grid) return;
+
+    if (favViewMode === 'compact') {
+        grid.className = 'browse-compact-list';
+        grid.innerHTML = videos.map(v => renderFavoriteCompactItem(v)).join('');
+    } else {
+        grid.className = 'video-grid';
+        grid.innerHTML = videos.map(v => renderVideoCard(v)).join('');
+    }
+    lucide.createIcons({ nodes: [grid] });
+}
+
 function renderVideoCard(v) {
     const durationStr = formatDuration(v.duration);
     const playStr = formatPlayCount(v.play_count);
-    const badgeClass = v.summary_status;
-    const badgeText = {
-        'done': '已总结',
-        'no_subtitle': '无字幕',
-        'none': '未总结',
-    }[v.summary_status] || '未总结';
+    const { badgeClass, badgeText } = summaryBadge(v.summary_status);
 
     // Store video data in JS Map for reliable click handling
     favVideoData.set(v.bvid, {
@@ -961,24 +1045,38 @@ function renderVideoCard(v) {
         upperMid: v.upper_mid || 0,
     });
 
-    return `
-        <div class="video-card" id="card-${v.bvid}" data-bvid="${v.bvid}">
-            <div class="cover-wrapper">
-                <img src="${v.cover}" alt="" loading="lazy" referrerpolicy="no-referrer">
-                <button class="unfav-btn" title="取消收藏">✕</button>
-                <span class="duration-badge">${durationStr}</span>
-                <span class="summary-badge ${badgeClass}" id="badge-${v.bvid}">${badgeText}</span>
-            </div>
-            <div class="card-info">
-                <div class="card-title" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</div>
-                <div class="card-meta">
-                    <span class="upper-name">${escapeHtml(v.upper)}</span>
-                    <span class="play-count"><i data-lucide="play" class="lucide-icon" style="width:10px;height:10px;"></i> ${playStr}</span>
-                </div>
-            </div>
-        </div>
-    `;
+    return renderSharedThumbCard({
+        id: `card-${v.bvid}`,
+        dataAttrs: `data-bvid="${escapeAttr(v.bvid)}"`,
+        title: v.title,
+        cover: v.cover,
+        duration: durationStr,
+        badgeId: `badge-${v.bvid}`,
+        badgeClass,
+        badgeText,
+        metaLeft: v.upper || '',
+        metaRight: `${playStr} 播放`,
+        actionButtonHtml: `<button class="unfav-btn" title="取消收藏">✕</button>`,
+    });
 }
+
+function renderFavoriteCompactItem(v) {
+    const { badgeClass, badgeText } = summaryBadge(v.summary_status);
+    const compactMeta = `${v.upper || '未知UP'} · ${formatPlayCount(v.play_count)} 播放`;
+    return renderSharedCompactItem({
+        bvid: v.bvid,
+        title: v.title,
+        cover: v.cover,
+        meta: compactMeta,
+        badgeId: `badge-${v.bvid}`,
+        badgeClass,
+        badgeText,
+        actionButtonHtml: `<button class="compact-unfav-btn unfav-btn" title="取消收藏">✕</button>`,
+        extraClass: 'fav-compact-item',
+    });
+}
+
+setFavViewMode(favViewMode);
 
 function formatDuration(seconds) {
     if (!seconds) return '0:00';

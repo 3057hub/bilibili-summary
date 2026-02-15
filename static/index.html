@@ -147,8 +147,22 @@
             <!-- Favorites Browse Page -->
             <div class="page" id="fav-page">
                 <div class="main-header">
-                    <h2 id="favBrowseTitle"><i data-lucide="star" class="lucide-icon"></i> 收藏夹</h2>
-                    <p id="favBrowseSubtitle">选择左侧收藏夹查看视频</p>
+                    <div class="fav-header-row">
+                        <div>
+                            <h2 id="favBrowseTitle"><i data-lucide="star" class="lucide-icon"></i> 收藏夹</h2>
+                            <p id="favBrowseSubtitle">选择左侧收藏夹查看视频</p>
+                        </div>
+                        <div class="fav-view-toggle" id="favViewToggle">
+                            <button class="fav-view-btn active" data-view="thumb" data-tip="缩略图视图" aria-label="缩略图视图" onclick="setFavViewMode('thumb', this)">
+                                <i data-lucide="layout-grid" class="lucide-icon" style="width:14px;height:14px;"></i>
+                                <span class="visually-hidden">缩略图视图</span>
+                            </button>
+                            <button class="fav-view-btn" data-view="compact" data-tip="紧凑列表视图" aria-label="紧凑列表视图" onclick="setFavViewMode('compact', this)">
+                                <i data-lucide="list" class="lucide-icon" style="width:14px;height:14px;"></i>
+                                <span class="visually-hidden">紧凑列表视图</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="main-body">
                     <div class="video-grid" id="favVideoGrid"></div>
