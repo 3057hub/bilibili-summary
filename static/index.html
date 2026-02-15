@@ -177,11 +177,13 @@
                             <p id="browseSubtitle">选择左侧分类查看</p>
                         </div>
                         <div class="browse-view-toggle" id="browseViewToggle">
-                            <button class="browse-view-btn active" data-view="thumb" onclick="setBrowseViewMode('thumb', this)" title="缩略图">
-                                <i data-lucide="layout-grid" class="lucide-icon" style="width:13px;height:13px;"></i> 缩略图
+                            <button class="browse-view-btn active" data-view="thumb" data-tip="缩略图视图" aria-label="缩略图视图" onclick="setBrowseViewMode('thumb', this)">
+                                <i data-lucide="layout-grid" class="lucide-icon" style="width:14px;height:14px;"></i>
+                                <span class="visually-hidden">缩略图视图</span>
                             </button>
-                            <button class="browse-view-btn" data-view="compact" onclick="setBrowseViewMode('compact', this)" title="紧凑列表">
-                                <i data-lucide="list" class="lucide-icon" style="width:13px;height:13px;"></i> 紧凑列表
+                            <button class="browse-view-btn" data-view="compact" data-tip="紧凑列表视图" aria-label="紧凑列表视图" onclick="setBrowseViewMode('compact', this)">
+                                <i data-lucide="list" class="lucide-icon" style="width:14px;height:14px;"></i>
+                                <span class="visually-hidden">紧凑列表视图</span>
                             </button>
                         </div>
                     </div>
