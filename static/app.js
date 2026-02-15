@@ -127,7 +127,34 @@ function switchToPage(pageId, navEl) {
     // Show page
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById(pageId).classList.add('active');
+    updateGlobalBackButton();
 }
+
+function updateGlobalBackButton() {
+    const btn = document.getElementById('globalBackBtn');
+    if (!btn) return;
+    const browseReading = document.getElementById('readingView')?.classList.contains('active');
+    const favReading = document.getElementById('favReadingView')?.classList.contains('active');
+    const visible = !!(browseReading || favReading);
+    btn.classList.toggle('active', visible);
+    btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function handleGlobalBack() {
+    const browseReading = document.getElementById('readingView')?.classList.contains('active');
+    const favReading = document.getElementById('favReadingView')?.classList.contains('active');
+    if (favReading) {
+        closeFavReading();
+    } else if (browseReading) {
+        closeReading();
+    }
+}
+
+const globalBackBtn = document.getElementById('globalBackBtn');
+if (globalBackBtn) {
+    globalBackBtn.addEventListener('click', handleGlobalBack);
+}
+updateGlobalBackButton();
 
 // ---------------------------------------------------------------------------
 // Status Check
@@ -446,6 +473,7 @@ function showCategory(type, navEl) {
     // Render card grid
     const readingView = document.getElementById('readingView');
     readingView.classList.remove('active');
+    updateGlobalBackButton();
     const list = document.getElementById('browseList');
     list.style.display = 'block';
     currentBrowseItems = cat.items || [];
@@ -479,6 +507,7 @@ function showUserVideos(uid, navEl) {
     // Render card grid
     const readingView = document.getElementById('readingView');
     readingView.classList.remove('active');
+    updateGlobalBackButton();
     const list = document.getElementById('browseList');
     list.style.display = 'block';
     currentBrowseItems = group.items || [];
@@ -712,6 +741,7 @@ async function openSummary(encodedPath) {
         if (data.error) { await showAlert(data.error, '加载失败'); return; }
         list.style.display = 'none';
         readingView.classList.add('active');
+        updateGlobalBackButton();
         readingContent.innerHTML = renderMarkdown(data.content);
 
         const bvidMatch = data.content.match(/\*\*BV号\*\*:\s*(BV\w+)/);
@@ -734,6 +764,7 @@ async function openSummary(encodedPath) {
 function closeReading() {
     document.getElementById('readingView').classList.remove('active');
     document.getElementById('browseList').style.display = 'block';
+    updateGlobalBackButton();
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,6 +1288,7 @@ function selectFavoriteFolder(favId, title) {
     grid.style.display = '';
     document.getElementById('favAutoProgress').innerHTML = '';
     document.getElementById('favReadingView').classList.remove('active');
+    updateGlobalBackButton();
     document.getElementById('favLoadMore').style.display = 'none';
     setFavViewMode(favViewMode);
 
@@ -1581,6 +1613,7 @@ async function showVideoSummary(bvid, path) {
     loadMore.style.display = 'none';
     document.getElementById('favAutoProgress').style.display = 'none';
     readingView.classList.add('active');
+    updateGlobalBackButton();
 
     try {
         // Encode path segments for URL (preserve /)
@@ -1639,6 +1672,7 @@ function closeFavReading() {
     document.getElementById('favVideoGrid').style.display = '';
     document.getElementById('favAutoProgress').style.display = '';
     document.getElementById('favLoadMore').style.display = favHasMore ? 'block' : 'none';
+    updateGlobalBackButton();
 }
 
 async function retrySummarize(bvid) {

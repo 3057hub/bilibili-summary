@@ -74,6 +74,7 @@
     --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 40px rgba(251, 113, 133, 0.08);
     --interactive-height: 36px;
+    --sidebar-width: 260px;
 
     /* ---- Log container ---- */
     --log-bg: rgba(0, 0, 0, 0.35);
@@ -241,14 +242,54 @@ body::before {
 
 /* ===================== SIDEBAR ===================== */
 .sidebar {
-    width: 260px;
-    min-width: 260px;
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     backdrop-filter: blur(20px) saturate(1.2);
     -webkit-app-region: drag;
+}
+
+.gutter-back-btn {
+    position: fixed;
+    left: calc(var(--sidebar-width) + var(--space-2));
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 54px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(10px);
+    transition: all var(--duration-fast) var(--ease-standard);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.gutter-back-btn .lucide-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.gutter-back-btn.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.gutter-back-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    transform: translateY(-50%) translateX(2px);
+    box-shadow: 0 0 14px var(--accent-glow);
 }
 
 .sidebar-header {
@@ -2318,5 +2359,11 @@ textarea {
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .gutter-back-btn {
+        display: none;
     }
 }
