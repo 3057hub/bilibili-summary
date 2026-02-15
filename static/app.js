@@ -1478,7 +1478,6 @@ async function asrSummarize(bvid) {
 
 async function unfavoriteVideo(bvid, cardEl) {
     if (!currentFavId) return;
-    if (!confirm('确定取消收藏这个视频？')) return;
 
     // Visual feedback
     if (cardEl) {
@@ -1518,7 +1517,6 @@ async function unfavoriteVideo(bvid, cardEl) {
 
 async function unfavoriteFromReading(bvid) {
     if (!currentFavId) return;
-    if (!confirm('确定取消收藏这个视频？')) return;
 
     try {
         const res = await fetch(`/api/favorites/${currentFavId}/video/${bvid}`, {
