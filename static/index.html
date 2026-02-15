@@ -171,8 +171,20 @@
             <!-- Browse Page -->
             <div class="page" id="browse-page">
                 <div class="main-header" id="browseHeader">
-                    <h2 id="browseTitle"><i data-lucide="book-open" class="lucide-icon"></i> 浏览总结</h2>
-                    <p id="browseSubtitle">选择左侧分类查看</p>
+                    <div class="browse-header-row">
+                        <div>
+                            <h2 id="browseTitle"><i data-lucide="book-open" class="lucide-icon"></i> 浏览总结</h2>
+                            <p id="browseSubtitle">选择左侧分类查看</p>
+                        </div>
+                        <div class="browse-view-toggle" id="browseViewToggle">
+                            <button class="browse-view-btn active" data-view="thumb" onclick="setBrowseViewMode('thumb', this)" title="缩略图">
+                                <i data-lucide="layout-grid" class="lucide-icon" style="width:13px;height:13px;"></i> 缩略图
+                            </button>
+                            <button class="browse-view-btn" data-view="compact" onclick="setBrowseViewMode('compact', this)" title="紧凑列表">
+                                <i data-lucide="list" class="lucide-icon" style="width:13px;height:13px;"></i> 紧凑列表
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="main-body">
                     <div id="browseList"></div>

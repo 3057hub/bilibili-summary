@@ -30,6 +30,8 @@ initTheme();
 
 // Cache for summaries data
 let summariesData = null;
+let browseViewMode = localStorage.getItem('bilisummary-browse-view') || 'thumb';
+let currentBrowseItems = [];
 
 // ---------------------------------------------------------------------------
 // Navigation — static pages
@@ -249,8 +251,8 @@ function showCategory(type, navEl) {
     readingView.classList.remove('active');
     const list = document.getElementById('browseList');
     list.style.display = 'block';
-    list.innerHTML = `<div class="browse-grid">${cat.items.map(item => renderBrowseCard(item)).join('')}</div>`;
-    lucide.createIcons({ nodes: [list] });
+    currentBrowseItems = cat.items || [];
+    renderBrowseItems(currentBrowseItems);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +283,36 @@ function showUserVideos(uid, navEl) {
     readingView.classList.remove('active');
     const list = document.getElementById('browseList');
     list.style.display = 'block';
-    list.innerHTML = `<div class="browse-grid">${group.items.map(item => renderBrowseCard(item)).join('')}</div>`;
+    currentBrowseItems = group.items || [];
+    renderBrowseItems(currentBrowseItems);
+}
+
+function setBrowseViewMode(mode, triggerEl = null) {
+    if (mode !== 'thumb' && mode !== 'compact') return;
+    browseViewMode = mode;
+    localStorage.setItem('bilisummary-browse-view', mode);
+
+    const toggle = document.getElementById('browseViewToggle');
+    if (toggle) {
+        toggle.querySelectorAll('.browse-view-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === mode);
+        });
+    }
+
+    if (currentBrowseItems.length > 0) {
+        renderBrowseItems(currentBrowseItems);
+    }
+}
+
+function renderBrowseItems(items) {
+    const list = document.getElementById('browseList');
+    if (!list) return;
+
+    if (browseViewMode === 'compact') {
+        list.innerHTML = `<div class="browse-compact-list">${items.map(item => renderBrowseCompactItem(item)).join('')}</div>`;
+    } else {
+        list.innerHTML = `<div class="browse-grid">${items.map(item => renderBrowseCard(item)).join('')}</div>`;
+    }
     lucide.createIcons({ nodes: [list] });
 }
 
@@ -311,6 +342,30 @@ function renderBrowseCard(item) {
         </div>
     `;
 }
+
+function renderBrowseCompactItem(item) {
+    const badgeClass = item.no_subtitle ? 'no_subtitle' : 'done';
+    const badgeText = item.no_subtitle ? '无字幕' : '已总结';
+    const cover = safeHttpUrl(item.cover || '');
+    const bvidText = item.bvid ? item.bvid : 'BV 未记录';
+
+    const coverHtml = cover
+        ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<div class="browse-compact-placeholder"><i data-lucide="image-off" class="lucide-icon" style="width:14px;height:14px;"></i></div>`;
+
+    return `
+        <div class="browse-compact-item" onclick="openSummary('${encodePath(item.path)}')">
+            <div class="browse-compact-cover">${coverHtml}</div>
+            <div class="browse-compact-main">
+                <div class="browse-compact-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                <div class="browse-compact-meta">${escapeHtml(bvidText)}</div>
+            </div>
+            <span class="browse-inline-badge ${badgeClass}">${badgeText}</span>
+        </div>
+    `;
+}
+
+setBrowseViewMode(browseViewMode);
 
 // ---------------------------------------------------------------------------
 // Reading View — shared helpers
