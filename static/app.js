@@ -548,7 +548,7 @@ function renderSharedThumbCard({
     const safeCover = safeHttpUrl(cover || '');
     const coverHtml = safeCover
         ? `<img src="${escapeAttr(safeCover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-        : `<div class="cover-fallback"><i data-lucide="image-off" class="lucide-icon" style="width:18px;height:18px;"></i></div>`;
+        : `<div class="cover-fallback"><i data-lucide="image-off" class="lucide-icon"></i></div>`;
 
     return `
         <div class="video-card" ${id ? `id="${id}"` : ''} ${dataAttrs} ${onClick ? `onclick="${onClick}"` : ''}>
@@ -584,7 +584,7 @@ function renderSharedCompactItem({
     const safeCover = safeHttpUrl(cover || '');
     const coverHtml = safeCover
         ? `<img src="${escapeAttr(safeCover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-        : `<div class="browse-compact-placeholder"><i data-lucide="image-off" class="lucide-icon" style="width:14px;height:14px;"></i></div>`;
+        : `<div class="browse-compact-placeholder"><i data-lucide="image-off" class="lucide-icon icon-sm"></i></div>`;
 
     return `
         <div class="browse-compact-item ${extraClass}" data-bvid="${escapeAttr(bvid)}" ${onClick ? `onclick="${onClick}"` : ''}>
@@ -651,22 +651,22 @@ function renderReadingActions(containerId, {
     const buttons = [];
     if (bvid && showOpen) {
         buttons.push(
-            `<button class="action-btn action-btn-open" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon" style="width:12px;height:12px;"></i> 打开 B站</button>`
+            `<button class="action-btn action-btn-open" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon icon-xs"></i> 打开 B站</button>`
         );
     }
     if (bvid && isNoSub && enableRetry) {
         buttons.push(
-            `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')"><i data-lucide="refresh-cw" class="lucide-icon" style="width:12px;height:12px;"></i> 重试字幕总结</button>`
+            `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')"><i data-lucide="refresh-cw" class="lucide-icon icon-xs"></i> 重试字幕总结</button>`
         );
     }
     if (bvid && isNoSub && enableAsr) {
         buttons.push(
-            `<button class="action-btn action-btn-asr" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon" style="width:12px;height:12px;"></i> 语音识别总结</button>`
+            `<button class="action-btn action-btn-asr" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon icon-xs"></i> 语音识别总结</button>`
         );
     }
     if (bvid && showUnfav) {
         buttons.push(
-            `<button class="action-btn action-btn-unfav" onclick="unfavoriteFromReading('${bvid}')"><i data-lucide="heart-off" class="lucide-icon" style="width:12px;height:12px;"></i> 取消收藏</button>`
+            `<button class="action-btn action-btn-unfav" onclick="unfavoriteFromReading('${bvid}')"><i data-lucide="heart-off" class="lucide-icon icon-xs"></i> 取消收藏</button>`
         );
     }
 
@@ -847,7 +847,7 @@ function listenProgress(taskId, prefix) {
             case 'done':
                 isDone = true;
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon" style="width:14px;height:14px;"></i> 开始总结';
+                submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon icon-sm"></i> 开始总结';
                 lucide.createIcons({ nodes: [submitBtn] });
                 addLog(logEl, `完成: 成功 ${d.success} | 已跳过 ${d.skipped} | 无字幕 ${d.no_subtitle} | 失败 ${d.errors}`, 'info');
                 progressBar.style.width = '100%';
@@ -914,7 +914,7 @@ function listenProgress(taskId, prefix) {
 
         if (!isDone) {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon" style="width:14px;height:14px;"></i> 开始总结';
+            submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon icon-sm"></i> 开始总结';
             lucide.createIcons({ nodes: [submitBtn] });
             addLog(logEl, '连接中断，可重新点击开始总结', 'error');
         }
@@ -929,7 +929,7 @@ function listenProgress(taskId, prefix) {
 async function showInlineResults(container, results) {
     if (!results.length) return;
 
-    container.innerHTML = `<div class="card"><div class="card-title"><i data-lucide="file-text" class="lucide-icon" style="width:15px;height:15px;"></i> 生成的总结 (${results.length})</div><div id="resultsList"></div></div>`;
+    container.innerHTML = `<div class="card"><div class="card-title"><i data-lucide="file-text" class="lucide-icon icon-md"></i> 生成的总结 (${results.length})</div><div id="resultsList"></div></div>`;
     lucide.createIcons({ nodes: [container] });
     const list = container.querySelector('#resultsList');
 
@@ -950,7 +950,7 @@ async function showInlineResults(container, results) {
                 <span class="chevron"><i data-lucide="chevron-right" class="lucide-icon"></i></span>
             </div>
             <div class="result-card-body">
-                <div class="reading-content" style="padding-top:12px;">加载中...</div>
+                <div class="reading-content pt-3">加载中...</div>
             </div>
         `;
         list.appendChild(card);
@@ -1397,8 +1397,8 @@ function renderPendingSummarizeAction() {
 
     progressEl.innerHTML = `
         <div>发现 ${pendingSummarizeBvids.length} 个未总结视频</div>
-        <button class="btn-secondary" style="margin-top:8px;padding:6px 12px;font-size:12px;" onclick="startPendingSummarize()">
-            <i data-lucide="play" class="lucide-icon" style="width:12px;height:12px;"></i> 总结未总结视频
+        <button class="btn-secondary btn-secondary-compact mt-2" onclick="startPendingSummarize()">
+            <i data-lucide="play" class="lucide-icon icon-xs"></i> 总结未总结视频
         </button>
     `;
     lucide.createIcons({ nodes: [progressEl] });
@@ -1522,9 +1522,9 @@ function listenAutoSummarize(taskId, progressEl) {
                         isDone = true;
                         const remaining = pendingSummarizeBvids.length;
                         if (remaining > 0) {
-                            progressEl.innerHTML = `<div style="color:var(--warning);">已完成，仍有 ${remaining} 个视频可重试</div>`;
+                            progressEl.innerHTML = `<div class="text-warning">已完成，仍有 ${remaining} 个视频可重试</div>`;
                         } else {
-                            progressEl.innerHTML = `<div style="color:var(--success);">处理完成</div>`;
+                            progressEl.innerHTML = `<div class="text-success">处理完成</div>`;
                         }
                         setTimeout(() => renderPendingSummarizeAction(), 2200);
                         return;
@@ -1870,7 +1870,7 @@ async function saveSettings() {
     const token = document.getElementById('settingsToken').value.trim();
     const defaultModel = document.getElementById('settingsModel').value.trim();
 
-    statusEl.style.color = 'var(--text-muted)';
+    statusEl.className = 'settings-save-status text-muted-md';
     statusEl.textContent = '保存中...';
 
     try {
@@ -1885,19 +1885,22 @@ async function saveSettings() {
         });
         const data = await res.json();
         if (data.success) {
-            statusEl.style.color = 'var(--success)';
+            statusEl.className = 'settings-save-status text-success';
             statusEl.textContent = '保存成功';
             // Reload to show masked token
             setTimeout(() => loadSettings(), 500);
         } else {
-            statusEl.style.color = 'var(--error)';
+            statusEl.className = 'settings-save-status text-error';
             statusEl.textContent = '保存失败: ' + (data.error || '');
         }
     } catch (err) {
-        statusEl.style.color = 'var(--error)';
+        statusEl.className = 'settings-save-status text-error';
         statusEl.textContent = '保存失败: ' + err.message;
     }
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    setTimeout(() => {
+        statusEl.className = 'settings-save-status';
+        statusEl.textContent = '';
+    }, 3000);
 }
 
 async function loadModels() {
@@ -1963,10 +1966,10 @@ function toggleTokenVisibility() {
     const btn = document.getElementById('toggleTokenBtn');
     if (input.type === 'password') {
         input.type = 'text';
-        btn.innerHTML = '<i data-lucide="eye-off" class="lucide-icon" style="width:14px;height:14px;"></i>';
+        btn.innerHTML = '<i data-lucide="eye-off" class="lucide-icon icon-sm"></i>';
     } else {
         input.type = 'password';
-        btn.innerHTML = '<i data-lucide="eye" class="lucide-icon" style="width:14px;height:14px;"></i>';
+        btn.innerHTML = '<i data-lucide="eye" class="lucide-icon icon-sm"></i>';
     }
     lucide.createIcons({ nodes: [btn] });
 }

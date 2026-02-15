@@ -150,6 +150,21 @@ body {
     flex-shrink: 0;
 }
 
+.lucide-icon.icon-xs {
+    width: 12px;
+    height: 12px;
+}
+
+.lucide-icon.icon-sm {
+    width: 14px;
+    height: 14px;
+}
+
+.lucide-icon.icon-md {
+    width: 15px;
+    height: 15px;
+}
+
 /* ---- Ambient background glow ---- */
 body::before {
     content: '';
@@ -507,6 +522,14 @@ body::before {
     align-items: center;
     justify-content: center;
     gap: 6px;
+}
+
+.nav-item-settings {
+    margin-bottom: var(--space-2);
+}
+
+.is-hidden {
+    display: none;
 }
 
 .btn-footer:hover {
@@ -1860,6 +1883,18 @@ textarea {
     transition: all var(--duration-fast) var(--ease-standard);
 }
 
+.btn-secondary-compact {
+    min-height: var(--interactive-height);
+    padding: 6px 10px;
+    font-size: var(--text-sm);
+}
+
+.btn-secondary-xs {
+    min-height: 28px;
+    padding: 4px 12px;
+    font-size: var(--text-sm);
+}
+
 .btn-secondary:hover {
     background: var(--bg-card-hover);
     border-color: var(--border-hover);
@@ -1869,6 +1904,23 @@ textarea {
     margin-top: 12px;
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.text-success {
+    color: var(--success);
+}
+
+.text-warning {
+    color: var(--warning);
+}
+
+.text-error {
+    color: var(--error);
+}
+
+.text-muted-md {
+    color: var(--text-muted);
+    font-size: var(--text-md);
 }
 
 .fav-auto-progress .mini-log {
@@ -2012,6 +2064,46 @@ textarea {
     cursor: pointer;
     transition: all 0.15s ease;
     position: relative;
+}
+
+.settings-token-row {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.settings-token-input {
+    flex: 1;
+}
+
+.settings-save-status {
+    margin-top: var(--space-2);
+    font-size: var(--text-md);
+}
+
+.card-header-inline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-title-tight {
+    margin-bottom: 0;
+}
+
+.mt-2 {
+    margin-top: var(--space-2);
+}
+
+.mt-3 {
+    margin-top: var(--space-3);
+}
+
+.mt-4 {
+    margin-top: var(--space-4);
+}
+
+.pt-3 {
+    padding-top: var(--space-3);
 }
 
 .model-item:hover {
