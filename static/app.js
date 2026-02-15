@@ -431,19 +431,43 @@ setBrowseViewMode(browseViewMode);
 // ---------------------------------------------------------------------------
 // Reading View — shared helpers
 // ---------------------------------------------------------------------------
-function buildActionButtons(bvid, { isNoSub = false, showUnfav = false, showOpen = true } = {}) {
-    let html = '';
-    if (bvid && isNoSub) {
-        html += `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')">重试</button>`;
-        html += `<button class="action-btn action-btn-asr" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon" style="width:12px;height:12px;"></i> 语音识别总结</button>`;
-    }
+function renderReadingActions(containerId, {
+    bvid = '',
+    isNoSub = false,
+    showUnfav = false,
+    enableRetry = false,
+    enableAsr = false,
+    showOpen = true,
+} = {}) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const buttons = [];
     if (bvid && showOpen) {
-        html += `<button class="action-btn action-btn-open" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon" style="width:12px;height:12px;"></i> B站打开</button>`;
+        buttons.push(
+            `<button class="action-btn action-btn-open" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon" style="width:12px;height:12px;"></i> 打开 B站</button>`
+        );
+    }
+    if (bvid && isNoSub && enableRetry) {
+        buttons.push(
+            `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')"><i data-lucide="refresh-cw" class="lucide-icon" style="width:12px;height:12px;"></i> 重试字幕总结</button>`
+        );
+    }
+    if (bvid && isNoSub && enableAsr) {
+        buttons.push(
+            `<button class="action-btn action-btn-asr" onclick="asrSummarize('${bvid}')"><i data-lucide="mic" class="lucide-icon" style="width:12px;height:12px;"></i> 语音识别总结</button>`
+        );
     }
     if (bvid && showUnfav) {
-        html += `<button class="action-btn action-btn-unfav" onclick="unfavoriteFromReading('${bvid}')">✕ 取消收藏</button>`;
+        buttons.push(
+            `<button class="action-btn action-btn-unfav" onclick="unfavoriteFromReading('${bvid}')"><i data-lucide="heart-off" class="lucide-icon" style="width:12px;height:12px;"></i> 取消收藏</button>`
+        );
     }
-    return html;
+
+    container.innerHTML = buttons.join('');
+    if (buttons.length) {
+        lucide.createIcons({ nodes: [container] });
+    }
 }
 
 function setupExternalLinks(container) {
@@ -460,7 +484,6 @@ async function openSummary(encodedPath) {
     const list = document.getElementById('browseList');
     const readingView = document.getElementById('readingView');
     const readingContent = document.getElementById('readingContent');
-    const actions = document.getElementById('readingActions');
 
     try {
         const res = await fetch(`/api/summary/${apiPath}`);
@@ -473,9 +496,15 @@ async function openSummary(encodedPath) {
         const bvidMatch = data.content.match(/\*\*BV号\*\*:\s*(BV\w+)/);
         const bvid = bvidMatch ? bvidMatch[1] : '';
         const isNoSub = data.content.includes('无法获取字幕');
-        const actionsHtml = buildActionButtons(bvid, { isNoSub });
-        actions.innerHTML = actionsHtml;
-        if (actionsHtml) lucide.createIcons();
+        // Browse page keeps actions aligned with favorites, but retry/asr are disabled here.
+        renderReadingActions('readingActions', {
+            bvid,
+            isNoSub,
+            showOpen: true,
+            showUnfav: false,
+            enableRetry: false,
+            enableAsr: false,
+        });
 
         setupExternalLinks(readingContent);
     } catch (err) { alert('加载失败: ' + err.message); }
@@ -1277,9 +1306,14 @@ async function showVideoSummary(bvid, path) {
         const data = await res.json();
         if (data.content) {
             const isNoSub = data.content.includes('无法获取字幕');
-            const actions = document.getElementById('favReadingActions');
-            actions.innerHTML = buildActionButtons(bvid, { isNoSub, showUnfav: true });
-            lucide.createIcons();
+            renderReadingActions('favReadingActions', {
+                bvid,
+                isNoSub,
+                showOpen: true,
+                showUnfav: true,
+                enableRetry: true,
+                enableAsr: true,
+            });
 
             readingContent.innerHTML = renderMarkdown(data.content);
 
