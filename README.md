@@ -1,30 +1,39 @@
-# BiliSummary — Bilibili 视频总结器
+# BiliSummary
 
-一款基于 AI 的 Bilibili 视频内容总结工具，支持自动获取字幕并生成结构化 Markdown 摘要。
+Desktop-first Bilibili summarizer with AI-generated Markdown output, favorites workflow, and unified browse/reading UX.
 
-## ✨ 功能
+## Features
 
-- **URL 模式** — 粘贴视频链接，批量生成总结
-- **UP 主模式** — 输入 UP 主名字或 UID，自动拉取视频并总结
-- **收藏夹浏览** — 扫码登录后自动加载收藏夹，一键批量总结
-- **语音识别 (ASR)** — 无字幕视频可通过 GLM-ASR 语音识别获取内容
-- **macOS 原生窗口** — 基于 pywebview，无需浏览器
+- URL mode: summarize videos from pasted Bilibili URLs.
+- UP mode: summarize recent videos by UP name or UID.
+- Favorites mode:
+  - QR login to Bilibili.
+  - Load favorite folders and videos.
+  - Summarize unsummarized favorites in batch.
+  - Unfavorite with short-window undo.
+- Browse mode:
+  - Unified card system with Favorites.
+  - Thumbnail / compact view toggle.
+  - Click-through reading page.
+- Reading UX:
+  - Unified top action buttons.
+  - Global gutter back button between sidebar and content.
+- ASR fallback:
+  - For videos without subtitles, trigger speech-to-text summarize flow.
 
-## 📦 技术栈
+## Stack
 
-| 组件 | 技术 |
-|------|------|
-| 后端 | FastAPI + Uvicorn |
-| 前端 | Vanilla JS + CSS |
-| 桌面 | pywebview |
-| AI | Anthropic Claude API (兼容接口) |
-| ASR | GLM-ASR-2512 (智谱 AI) |
-| B 站 | bilibili-api-python |
-| 音频 | PyAV |
+- Backend: FastAPI + Uvicorn
+- Frontend: Vanilla JS + CSS (tokenized design system)
+- Desktop shell: pywebview
+- Bilibili integration: `bilibili-api-python`
+- AI summarize: Anthropic-compatible API
+- ASR: GLM ASR integration
+- Audio: PyAV
 
-## 🚀 快速开始
+## Quick Start
 
-### 1. 安装依赖
+1. Install dependencies:
 
 ```bash
 python3 -m venv venv
@@ -32,43 +41,36 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API
-
-创建 `.env.local` 文件：
+2. Create `.env.local`:
 
 ```env
 ANTHROPIC_AUTH_TOKEN=your_api_key
-ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic  # 或其他兼容接口
+ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic
 ```
 
-### 3. 运行
+3. Run desktop app:
 
 ```bash
 python app.py
 ```
 
-应用将在原生窗口中打开，首次使用需扫码登录 Bilibili。
+## Project Layout
 
-## 📁 项目结构
-
-```
-├── app.py              # 桌面应用入口 (pywebview)
-├── server.py           # FastAPI 服务器
-├── summarize.py        # AI 总结逻辑
-├── routes/             # API 路由模块
-│   ├── asr.py          # 语音识别总结
-│   ├── auth.py         # B 站认证 (扫码登录)
-│   ├── favorites.py    # 收藏夹管理
-│   ├── settings.py     # 设置管理
-│   └── deps.py         # 共享依赖
-├── static/             # 前端资源
-│   ├── index.html
-│   ├── app.js
-│   └── style.css
-├── summary/            # 生成的总结 (gitignored)
-└── requirements.txt
+```text
+app.py                # Desktop entry (pywebview)
+server.py             # FastAPI app
+summarize.py          # Summarization pipeline
+routes/               # API route modules
+static/               # Frontend assets (index.html / app.js / style.css)
+docs/                 # Design system and project status
+summary/              # Generated summaries
 ```
 
-## 📄 License
+## Documentation
+
+- Design system: `/Users/jakevin/code/bilibili-summary/docs/design-system.md`
+- Current status and next tasks: `/Users/jakevin/code/bilibili-summary/docs/project-status.md`
+
+## License
 
 MIT
