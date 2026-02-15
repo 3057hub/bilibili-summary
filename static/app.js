@@ -32,6 +32,7 @@ initTheme();
 let summariesData = null;
 let browseViewMode = localStorage.getItem('bilisummary-browse-view') || 'thumb';
 let currentBrowseItems = [];
+let currentBrowseType = '';
 let favViewMode = localStorage.getItem('bilisummary-fav-view') || 'thumb';
 let currentFavVideos = [];
 
@@ -448,6 +449,7 @@ function showCategory(type, navEl) {
     const list = document.getElementById('browseList');
     list.style.display = 'block';
     currentBrowseItems = cat.items || [];
+    currentBrowseType = type;
     renderBrowseItems(currentBrowseItems);
 }
 
@@ -480,6 +482,7 @@ function showUserVideos(uid, navEl) {
     const list = document.getElementById('browseList');
     list.style.display = 'block';
     currentBrowseItems = group.items || [];
+    currentBrowseType = 'users';
     renderBrowseItems(currentBrowseItems);
 }
 
@@ -606,6 +609,10 @@ function renderBrowseCard(item) {
     const duration = formatDuration(item.duration || 0);
     const metaLeft = item.author_name || '本地总结';
     const metaRight = item.bvid || 'BV 未记录';
+    const showUnfav = currentBrowseType === 'favorites' && !!defaultFavId && !!item.bvid;
+    const actionButtonHtml = showUnfav
+        ? `<button class="unfav-btn" title="取消收藏" onclick="event.stopPropagation(); unfavoriteFromBrowse('${item.bvid}', this)">✕</button>`
+        : '';
 
     return renderSharedThumbCard({
         dataAttrs: `data-path="${escapeAttr(encodePath(item.path))}"`,
@@ -616,6 +623,7 @@ function renderBrowseCard(item) {
         badgeText,
         metaLeft,
         metaRight,
+        actionButtonHtml,
         onClick: `openSummary('${encodePath(item.path)}')`,
     });
 }
@@ -623,6 +631,7 @@ function renderBrowseCard(item) {
 function renderBrowseCompactItem(item) {
     const { badgeClass, badgeText } = summaryBadge(item.no_subtitle ? 'no_subtitle' : 'done');
     const compactMeta = `${item.author_name || '本地总结'} · ${item.bvid || 'BV 未记录'}`;
+    const showUnfav = currentBrowseType === 'favorites' && !!defaultFavId && !!item.bvid;
     return renderSharedCompactItem({
         bvid: item.bvid || '',
         title: item.name || item.bvid || '未命名视频',
@@ -630,7 +639,11 @@ function renderBrowseCompactItem(item) {
         meta: compactMeta,
         badgeClass,
         badgeText,
+        actionButtonHtml: showUnfav
+            ? `<button class="compact-unfav-btn unfav-btn" title="取消收藏" onclick="event.stopPropagation(); unfavoriteFromBrowse('${item.bvid}', this)">✕</button>`
+            : '',
         onClick: `openSummary('${encodePath(item.path)}')`,
+        extraClass: showUnfav ? 'fav-compact-item' : '',
     });
 }
 
@@ -709,7 +722,7 @@ async function openSummary(encodedPath) {
             bvid,
             isNoSub,
             showOpen: true,
-            showUnfav: false,
+            showUnfav: currentBrowseType === 'favorites' && !!defaultFavId,
             enableRetry: false,
             enableAsr: false,
         });
@@ -1071,6 +1084,7 @@ async function submitUser() {
 // Favorites Browser
 // ---------------------------------------------------------------------------
 let currentFavId = null;
+let defaultFavId = null;
 let currentFavPage = 1;
 let favHasMore = false;
 const favVideoData = new Map(); // bvid -> { summaryPath, title, ... }
@@ -1129,6 +1143,7 @@ async function loadFavoriteFolders() {
         const folders = data.folders || [];
         const defaultFolder = folders.find(f => f.is_default);
         const otherFolders = folders.filter(f => !f.is_default);
+        defaultFavId = defaultFolder ? defaultFolder.id : null;
 
         let html = '';
 
@@ -1820,13 +1835,57 @@ async function unfavoriteVideo(bvid, cardEl) {
     }
 }
 
-async function unfavoriteFromReading(bvid) {
-    if (!currentFavId) return;
-    const removedVideo = favVideoData.get(bvid) || { title: bvid };
-    const favId = currentFavId;
+async function unfavoriteFromBrowse(bvid, btnEl) {
+    if (!defaultFavId || !bvid) return;
+    const cardEl = btnEl ? btnEl.closest('.video-card, .browse-compact-item') : null;
+    const removedVideo = currentBrowseItems.find(v => v.bvid === bvid) || { name: bvid };
+
+    if (cardEl) {
+        cardEl.style.opacity = '0.4';
+        cardEl.style.pointerEvents = 'none';
+    }
 
     try {
-        const res = await fetch(`/api/favorites/${currentFavId}/video/${bvid}`, {
+        const res = await fetch(`/api/favorites/${defaultFavId}/video/${bvid}`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.error) {
+            await showAlert('取消收藏失败: ' + data.error, '操作失败');
+            if (cardEl) {
+                cardEl.style.opacity = '';
+                cardEl.style.pointerEvents = '';
+            }
+            return;
+        }
+
+        currentBrowseItems = currentBrowseItems.filter(v => v.bvid !== bvid);
+        const favCat = summariesData?.categories?.find(c => c.type === 'favorites');
+        if (favCat?.items) {
+            favCat.items = favCat.items.filter(v => v.bvid !== bvid);
+            favCat.count = favCat.items.length;
+        }
+        document.getElementById('browseSubtitle').textContent = `共 ${currentBrowseItems.length} 篇总结`;
+        renderBrowseItems(currentBrowseItems);
+
+        notifyUnfavoriteUndo({ favId: defaultFavId, bvid, title: removedVideo.title || removedVideo.name || bvid });
+    } catch (err) {
+        await showAlert('取消收藏失败: ' + err.message, '操作失败');
+        if (cardEl) {
+            cardEl.style.opacity = '';
+            cardEl.style.pointerEvents = '';
+        }
+    }
+}
+
+async function unfavoriteFromReading(bvid) {
+    const isBrowseReading = document.getElementById('readingView')?.classList.contains('active');
+    const favId = (isBrowseReading && currentBrowseType === 'favorites') ? defaultFavId : currentFavId;
+    if (!favId) return;
+    const removedVideo = favVideoData.get(bvid) || currentBrowseItems.find(v => v.bvid === bvid) || { title: bvid };
+
+    try {
+        const res = await fetch(`/api/favorites/${favId}/video/${bvid}`, {
             method: 'DELETE'
         });
         const data = await res.json();
@@ -1838,8 +1897,22 @@ async function unfavoriteFromReading(bvid) {
         const card = document.getElementById(`card-${bvid}`);
         if (card) card.remove();
         favVideoData.delete(bvid);
+        if (isBrowseReading && currentBrowseType === 'favorites') {
+            currentBrowseItems = currentBrowseItems.filter(v => v.bvid !== bvid);
+            const favCat = summariesData?.categories?.find(c => c.type === 'favorites');
+            if (favCat?.items) {
+                favCat.items = favCat.items.filter(v => v.bvid !== bvid);
+                favCat.count = favCat.items.length;
+            }
+            document.getElementById('browseSubtitle').textContent = `共 ${currentBrowseItems.length} 篇总结`;
+        }
         // Go back to grid
-        closeFavReading();
+        if (isBrowseReading && currentBrowseType === 'favorites') {
+            closeReading();
+            renderBrowseItems(currentBrowseItems);
+        } else {
+            closeFavReading();
+        }
         notifyUnfavoriteUndo({ favId, bvid, title: removedVideo.title });
     } catch (err) {
         await showAlert('取消收藏失败: ' + err.message, '操作失败');
