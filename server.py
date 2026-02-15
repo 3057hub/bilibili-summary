@@ -243,7 +243,7 @@ async def list_summaries():
             items.append(item)
             all_items.append(item)
         if items:
-            categories.append({"type": "favorites", "label": "收藏夹", "icon": "star", "count": len(items), "items": items})
+            categories.append({"type": "favorites", "label": "收藏", "icon": "star", "count": len(items), "items": items})
 
     # 3) Users — each UID is a sub-group with display name
     users_dir = summary_root / "users"

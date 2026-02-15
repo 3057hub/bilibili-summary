@@ -1117,7 +1117,7 @@ async function loadFavoriteFolders() {
         const res = await fetch('/api/favorites/list');
         const data = await res.json();
         if (data.error) {
-            renderState(container, { type: 'empty', title: '未登录', message: '请先登录 Bilibili 以加载收藏夹' });
+            renderState(container, { type: 'empty', title: '未登录', message: '请先登录 Bilibili 以加载收藏' });
             return;
         }
 
@@ -1168,7 +1168,7 @@ async function loadFavoriteFolders() {
     } catch (err) {
         renderState(container, {
             type: 'error',
-            title: '收藏夹加载失败',
+            title: '收藏加载失败',
             message: '请检查网络后重试',
             actionText: '重试',
             onAction: () => loadFavoriteFolders(),
@@ -1231,7 +1231,7 @@ function selectFavoriteFolder(favId, title) {
 
     // Clear and load — reset display states
     const grid = document.getElementById('favVideoGrid');
-    renderState(grid, { type: 'loading', title: '加载中', message: '正在获取收藏夹视频' });
+    renderState(grid, { type: 'loading', title: '加载中', message: '正在获取收藏视频' });
     grid.style.display = '';
     document.getElementById('favAutoProgress').innerHTML = '';
     document.getElementById('favReadingView').classList.remove('active');
@@ -1252,7 +1252,7 @@ async function loadFavoriteVideos(favId, page, append) {
             document.getElementById('favBrowseSubtitle').textContent = data.error;
             renderState(grid, {
                 type: 'error',
-                title: '收藏夹加载失败',
+                title: '收藏加载失败',
                 message: data.error,
                 actionText: '重试',
                 onAction: () => loadFavoriteVideos(favId, page, append),
@@ -1284,7 +1284,7 @@ async function loadFavoriteVideos(favId, page, append) {
         document.getElementById('favBrowseSubtitle').textContent = '加载失败: ' + err.message;
         renderState(grid, {
             type: 'error',
-            title: '收藏夹加载失败',
+            title: '收藏加载失败',
             message: err.message,
             actionText: '重试',
             onAction: () => loadFavoriteVideos(favId, page, append),
@@ -1313,7 +1313,7 @@ function renderFavoriteItems(videos) {
     const grid = document.getElementById('favVideoGrid');
     if (!grid) return;
     if (!videos || videos.length === 0) {
-        renderState(grid, { type: 'empty', title: '暂无视频', message: '该收藏夹暂无可展示内容' });
+        renderState(grid, { type: 'empty', title: '暂无视频', message: '当前收藏暂无可展示内容' });
         return;
     }
 
