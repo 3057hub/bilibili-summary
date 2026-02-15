@@ -14,6 +14,7 @@ import asyncio
 import os
 import time
 import re
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -227,7 +228,17 @@ async def summarize_with_claude(subtitle: str, title: str, client: anthropic.Asy
     return "⚠️ 生成总结失败 (Unknown)", 0.0
 
 
-def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, output_subdir: str = "standalone", author_name: str = "", author_uid: int = 0):
+def save_summary(
+    title: str,
+    bvid: str,
+    url: str,
+    duration: int,
+    summary: str,
+    output_subdir: str = "standalone",
+    author_name: str = "",
+    author_uid: int = 0,
+    cover_url: str = "",
+):
     """保存总结到 markdown 文件"""
     # 创建 summary 目录
     summary_dir = DATA_DIR / "summary" / output_subdir
@@ -249,12 +260,16 @@ def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, o
         author_line = f"**作者**: {author_name}\n"
 
     # 生成 markdown 内容
+    generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if cover_url.startswith("//"):
+        cover_url = "https:" + cover_url
+
     content = f"""# {title}
 
 **BV号**: {bvid}
 **视频链接**: https://www.bilibili.com/video/{bvid}
 {author_line}**时长**: {duration_str}
-**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**生成时间**: {generated_at}
 
 ---
 
@@ -264,6 +279,18 @@ def save_summary(title: str, bvid: str, url: str, duration: int, summary: str, o
 """
     
     filepath.write_text(content, encoding='utf-8')
+    meta_path = filepath.with_suffix(".meta.json")
+    meta_payload = {
+        "title": title,
+        "bvid": bvid,
+        "url": url,
+        "duration": duration,
+        "author_name": author_name,
+        "author_uid": author_uid,
+        "cover_url": cover_url,
+        "generated_at": generated_at,
+    }
+    meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"  ✅ 已保存: {filepath}")
 
 
@@ -281,6 +308,7 @@ async def process_video(url: str, client: anthropic.AsyncAnthropic, credential: 
         info = await v.get_info()
         title = info.get('title', bvid)
         duration = info.get('duration', 0)
+        cover_url = info.get('pic', '')
         owner = info.get('owner', {})
         author_name = owner.get('name', '')
         author_uid = owner.get('mid', 0)
@@ -331,7 +359,10 @@ async def process_video(url: str, client: anthropic.AsyncAnthropic, credential: 
             final_output_subdir = f"{output_subdir}/no_subtitle"
         
         # 保存
-        save_summary(title, bvid, url, duration, summary, final_output_subdir, author_name=author_name, author_uid=author_uid)
+        save_summary(
+            title, bvid, url, duration, summary, final_output_subdir,
+            author_name=author_name, author_uid=author_uid, cover_url=cover_url
+        )
         
     except Exception as e:
         print(f"  ❌ 处理失败: {e}")

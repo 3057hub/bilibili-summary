@@ -167,6 +167,7 @@ async def process_single_video(url: str, model: str, output_subdir: str, task_id
         info = await v.get_info()
         title = info.get("title", bvid)
         duration = info.get("duration", 0)
+        cover_url = info.get("pic", "")
         owner = info.get("owner", {})
         author_name = owner.get("name", "")
         author_uid = owner.get("mid", 0)
@@ -217,7 +218,10 @@ async def process_single_video(url: str, model: str, output_subdir: str, task_id
                 nosub_path.unlink()
                 clear_retry_count(output_subdir, safe_title)
 
-        save_summary(title, bvid, url, duration, summary, final_subdir, author_name=author_name, author_uid=author_uid)
+        save_summary(
+            title, bvid, url, duration, summary, final_subdir,
+            author_name=author_name, author_uid=author_uid, cover_url=cover_url
+        )
 
         status = "no_subtitle" if not subtitle_text else "success"
         await send_progress(task_id, "completed", {
@@ -274,4 +278,3 @@ def save_user_meta(uid: int, name: str):
     user_dir.mkdir(parents=True, exist_ok=True)
     meta_file = user_dir / ".meta.json"
     meta_file.write_text(json.dumps({"uid": uid, "name": name}, ensure_ascii=False), encoding="utf-8")
-

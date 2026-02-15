@@ -8,6 +8,7 @@ import os
 import asyncio
 import json
 import time
+import re
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -16,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from bilibili_api import user as bili_user
+from bilibili_api import user as bili_user, video as bili_video
 
 from summarize import extract_bvid, get_uid_by_name, get_user_videos, get_favorite_videos, sanitize_filename
 
@@ -95,6 +96,96 @@ def _resolve_summary_file(path: str) -> Path | None:
     return target
 
 
+_BVID_RE = re.compile(r"\*\*BV号\*\*:\s*(BV[0-9A-Za-z]+)")
+_cover_cache: dict[str, str] = {}
+_MAX_COVER_LOOKUPS_PER_REQUEST = 40
+
+
+def _extract_bvid_from_summary(md_path: Path) -> str:
+    try:
+        text = md_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    match = _BVID_RE.search(text)
+    return match.group(1) if match else ""
+
+
+def _build_summary_item(md_path: Path, summary_root: Path) -> dict:
+    rel = md_path.relative_to(summary_root)
+    item = {
+        "name": md_path.stem,
+        "path": str(rel),
+        "no_subtitle": "no_subtitle" in str(rel),
+        "bvid": "",
+        "cover": "",
+    }
+
+    meta_path = md_path.with_suffix(".meta.json")
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            item["bvid"] = meta.get("bvid", "") or ""
+            item["cover"] = meta.get("cover_url", "") or ""
+            if isinstance(item["cover"], str) and item["cover"].startswith("//"):
+                item["cover"] = "https:" + item["cover"]
+        except Exception:
+            pass
+
+    if not item["bvid"]:
+        item["bvid"] = _extract_bvid_from_summary(md_path)
+
+    if item["bvid"] and item["bvid"] in _cover_cache and not item["cover"]:
+        item["cover"] = _cover_cache[item["bvid"]]
+
+    return item
+
+
+async def _fetch_cover_by_bvid(bvid: str) -> str:
+    if not bvid:
+        return ""
+    if bvid in _cover_cache:
+        return _cover_cache[bvid]
+
+    try:
+        v = bili_video.Video(bvid=bvid, credential=deps.credential)
+        info = await v.get_info()
+        cover = info.get("pic", "") or ""
+        if isinstance(cover, str) and cover.startswith("//"):
+            cover = "https:" + cover
+        _cover_cache[bvid] = cover
+        return cover
+    except Exception:
+        _cover_cache[bvid] = ""
+        return ""
+
+
+async def _fill_missing_covers(items: list[dict]):
+    candidates: list[str] = []
+    seen = set()
+    for item in items:
+        bvid = item.get("bvid", "")
+        if bvid and not item.get("cover") and bvid not in seen:
+            seen.add(bvid)
+            candidates.append(bvid)
+
+    if not candidates:
+        return
+
+    sem = asyncio.Semaphore(6)
+    targets = candidates[:_MAX_COVER_LOOKUPS_PER_REQUEST]
+
+    async def bounded_fetch(bvid: str):
+        async with sem:
+            await _fetch_cover_by_bvid(bvid)
+
+    await asyncio.gather(*[bounded_fetch(bv) for bv in targets])
+
+    for item in items:
+        bvid = item.get("bvid", "")
+        if bvid and not item.get("cover"):
+            item["cover"] = _cover_cache.get(bvid, "")
+
+
 # ---------------------------------------------------------------------------
 # Core API Endpoints
 # ---------------------------------------------------------------------------
@@ -116,14 +207,16 @@ async def list_summaries():
         return {"categories": []}
 
     categories = []
+    all_items: list[dict] = []
 
     # 1) Standalone
     standalone_dir = summary_root / "standalone"
     if standalone_dir.exists():
         items = []
         for md in sorted(standalone_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-            rel = md.relative_to(summary_root)
-            items.append({"name": md.stem, "path": str(rel), "no_subtitle": "no_subtitle" in str(rel)})
+            item = _build_summary_item(md, summary_root)
+            items.append(item)
+            all_items.append(item)
         if items:
             categories.append({"type": "standalone", "label": "独立视频", "icon": "link", "count": len(items), "items": items})
 
@@ -132,8 +225,9 @@ async def list_summaries():
     if fav_dir.exists():
         items = []
         for md in sorted(fav_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-            rel = md.relative_to(summary_root)
-            items.append({"name": md.stem, "path": str(rel), "no_subtitle": "no_subtitle" in str(rel)})
+            item = _build_summary_item(md, summary_root)
+            items.append(item)
+            all_items.append(item)
         if items:
             categories.append({"type": "favorites", "label": "收藏夹", "icon": "star", "count": len(items), "items": items})
 
@@ -156,8 +250,9 @@ async def list_summaries():
 
             items = []
             for md in sorted(uid_folder.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-                rel = md.relative_to(summary_root)
-                items.append({"name": md.stem, "path": str(rel), "no_subtitle": "no_subtitle" in str(rel)})
+                item = _build_summary_item(md, summary_root)
+                items.append(item)
+                all_items.append(item)
             if items:
                 user_groups.append({"uid": uid, "display_name": display_name, "count": len(items), "items": items})
 
@@ -165,6 +260,7 @@ async def list_summaries():
             total = sum(g["count"] for g in user_groups)
             categories.append({"type": "users", "label": "UP 主", "icon": "users", "count": total, "groups": user_groups})
 
+    await _fill_missing_covers(all_items)
     return {"categories": categories}
 
 

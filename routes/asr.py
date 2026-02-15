@@ -48,6 +48,7 @@ async def asr_summarize(bvid: str, output_subdir: str = "favorites"):
             info = await v.get_info()
             title = info.get("title", bvid)
             duration = info.get("duration", 0)
+            cover_url = info.get("pic", "")
             owner = info.get("owner", {})
             author_name = owner.get("name", "")
             author_uid = owner.get("mid", 0)
@@ -275,6 +276,7 @@ async def asr_summarize(bvid: str, output_subdir: str = "favorites"):
                 title=title, bvid=bvid, url=url, duration=duration,
                 summary=summary_text, output_subdir=output_subdir,
                 author_name=author_name, author_uid=author_uid,
+                cover_url=cover_url,
             )
 
             new_path = f"{output_subdir}/{safe_title}.md"

@@ -289,18 +289,25 @@ function showUserVideos(uid, navEl) {
 // Browse: Render a summary card for the browse grid
 // ---------------------------------------------------------------------------
 function renderBrowseCard(item) {
-    const iconType = item.no_subtitle ? 'alert-triangle' : 'file-text';
-    const iconClass = item.no_subtitle ? 'no-subtitle' : 'has-subtitle';
     const badgeClass = item.no_subtitle ? 'no_subtitle' : 'done';
     const badgeText = item.no_subtitle ? '无字幕' : '已总结';
+    const cover = safeHttpUrl(item.cover || '');
+    const bvidText = item.bvid ? item.bvid : 'BV 未记录';
+
+    const coverHtml = cover
+        ? `<img src="${escapeAttr(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<div class="browse-cover-placeholder"><i data-lucide="image-off" class="lucide-icon" style="width:20px;height:20px;"></i></div>`;
 
     return `
-        <div class="browse-card" onclick="openSummary('${encodePath(item.path)}')">
-            <div class="browse-card-icon ${iconClass}">
-                <i data-lucide="${iconType}" class="lucide-icon" style="width:18px;height:18px;"></i>
+        <div class="browse-thumb-card" onclick="openSummary('${encodePath(item.path)}')">
+            <div class="browse-cover-wrapper">
+                ${coverHtml}
+                <span class="browse-status-badge ${badgeClass}">${badgeText}</span>
             </div>
-            <div class="browse-card-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-            <span class="browse-card-badge ${badgeClass}">${badgeText}</span>
+            <div class="browse-thumb-info">
+                <div class="browse-thumb-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                <div class="browse-thumb-meta">${escapeHtml(bvidText)}</div>
+            </div>
         </div>
     `;
 }
