@@ -367,16 +367,35 @@ function closeReading() {
 // Markdown → HTML
 // ---------------------------------------------------------------------------
 function renderMarkdown(md) {
-    return md
+    const escaped = escapeHtml(md || '');
+
+    const withMarkdownLinks = escaped.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        (_, text, rawUrl) => {
+            const safeUrl = safeHttpUrl(rawUrl);
+            if (!safeUrl) return text;
+            return `<a href="${escapeAttr(safeUrl)}" class="ext-link" target="_blank" rel="noopener noreferrer">${text}</a>`;
+        }
+    );
+
+    const withLinks = withMarkdownLinks
+        .split(/(<a [^>]+>.*?<\/a>)/g)
+        .map(part => {
+            if (part.startsWith('<a ')) return part;
+            return part.replace(/(^|[\s(])(https?:\/\/[^\s<")]+)/g, (match, prefix, rawUrl) => {
+                const safeUrl = safeHttpUrl(rawUrl);
+                if (!safeUrl) return match;
+                return `${prefix}<a href="${escapeAttr(safeUrl)}" class="ext-link" target="_blank" rel="noopener noreferrer">${escapeHtml(safeUrl)}</a>`;
+            });
+        })
+        .join('');
+
+    return withLinks
         .replace(/^### (.+)$/gm, '<h3>$1</h3>')
         .replace(/^## (.+)$/gm, '<h2>$1</h2>')
         .replace(/^# (.+)$/gm, '<h1>$1</h1>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/^---$/gm, '<hr>')
-        // Markdown links: [text](url)
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" class="ext-link" target="_blank">$1</a>')
-        // Bare URLs (not already inside an href)
-        .replace(/(?<!href=")(https?:\/\/[^\s<"]+)/g, '<a href="$1" class="ext-link" target="_blank">$1</a>')
         .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
         .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
         .replace(/^(?!<[hlu]|<li|<hr|<a)(.+)$/gm, '<p>$1</p>')
@@ -630,6 +649,26 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function escapeAttr(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function safeHttpUrl(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return null;
+        }
+        return parsed.href;
+    } catch {
+        return null;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Submit Handlers
 // ---------------------------------------------------------------------------
@@ -674,6 +713,7 @@ let currentFavId = null;
 let currentFavPage = 1;
 let favHasMore = false;
 const favVideoData = new Map(); // bvid -> { summaryPath, title, ... }
+let pendingSummarizeBvids = [];
 
 async function loadFavoriteFolders() {
     const container = document.getElementById('sidebarFavorites');
@@ -773,6 +813,7 @@ favGrid.addEventListener('click', (e) => {
 function selectFavoriteFolder(favId, title) {
     currentFavId = favId;
     currentFavPage = 1;
+    pendingSummarizeBvids = [];
 
     // Highlight active folder
     document.querySelectorAll('.fav-folder-item').forEach(el => el.classList.remove('active'));
@@ -825,11 +866,15 @@ async function loadFavoriteVideos(favId, page, append) {
         }
         lucide.createIcons({ nodes: [grid] });
 
-        // Auto-summarize videos that don't have summaries
+        // Prepare manual summarize action for unsummarized videos.
         const unsummarized = videos.filter(v => v.summary_status === 'none').map(v => v.bvid);
-        if (unsummarized.length > 0) {
-            autoSummarizeVideos(unsummarized);
+        if (!append) {
+            pendingSummarizeBvids = [];
         }
+        if (unsummarized.length > 0) {
+            pendingSummarizeBvids = Array.from(new Set([...pendingSummarizeBvids, ...unsummarized]));
+        }
+        renderPendingSummarizeAction();
 
     } catch (err) {
         document.getElementById('favBrowseSubtitle').textContent = '加载失败: ' + err.message;
@@ -886,15 +931,44 @@ function formatPlayCount(count) {
     return String(count);
 }
 
+function renderPendingSummarizeAction() {
+    const progressEl = document.getElementById('favAutoProgress');
+    if (!progressEl) return;
+
+    if (pendingSummarizeBvids.length === 0) {
+        progressEl.innerHTML = '';
+        return;
+    }
+
+    progressEl.innerHTML = `
+        <div>发现 ${pendingSummarizeBvids.length} 个未总结视频</div>
+        <button class="btn-secondary" style="margin-top:8px;padding:6px 12px;font-size:12px;" onclick="startPendingSummarize()">
+            <i data-lucide="play" class="lucide-icon" style="width:12px;height:12px;"></i> 总结未总结视频
+        </button>
+    `;
+    lucide.createIcons({ nodes: [progressEl] });
+}
+
+function startPendingSummarize() {
+    if (!pendingSummarizeBvids.length) return;
+    autoSummarizeVideos([...pendingSummarizeBvids]);
+}
+
 async function autoSummarizeVideos(bvids) {
+    const targets = Array.from(new Set(bvids)).filter(Boolean);
+    if (!targets.length) {
+        renderPendingSummarizeAction();
+        return;
+    }
+
     const progressEl = document.getElementById('favAutoProgress');
     progressEl.innerHTML = `
-        <div>↻ 正在自动总结 ${bvids.length} 个视频...</div>
+        <div>↻ 正在总结 ${targets.length} 个视频...</div>
         <div class="mini-log" id="favMiniLog"></div>
     `;
 
     // Mark cards as summarizing
-    bvids.forEach(bvid => {
+    targets.forEach(bvid => {
         const badge = document.getElementById(`badge-${bvid}`);
         if (badge) {
             badge.className = 'summary-badge summarizing';
@@ -906,11 +980,11 @@ async function autoSummarizeVideos(bvids) {
         const res = await fetch('/api/favorites/summarize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bvids, output_subdir: 'favorites' })
+            body: JSON.stringify({ bvids: targets, output_subdir: 'favorites' })
         });
         const data = await res.json();
         if (!data.task_id) {
-            progressEl.innerHTML = '';
+            renderPendingSummarizeAction();
             return;
         }
 
@@ -918,6 +992,7 @@ async function autoSummarizeVideos(bvids) {
         listenAutoSummarize(data.task_id, progressEl);
     } catch (err) {
         progressEl.innerHTML = `<div style="color:var(--error);">自动总结失败: ${err.message}</div>`;
+        setTimeout(() => renderPendingSummarizeAction(), 2000);
     }
 }
 
@@ -960,6 +1035,7 @@ function listenAutoSummarize(taskId, progressEl) {
                     try { d = JSON.parse(eventData); } catch { continue; }
 
                     if (eventType === 'completed') {
+                        pendingSummarizeBvids = pendingSummarizeBvids.filter(b => b !== d.bvid);
                         const badge = document.getElementById(`badge-${d.bvid}`);
                         if (badge) {
                             if (d.status === 'no_subtitle') {
@@ -981,7 +1057,7 @@ function listenAutoSummarize(taskId, progressEl) {
                             miniLog.scrollTop = miniLog.scrollHeight;
                         }
                     } else if (eventType === 'skip') {
-                        // Already summarized
+                        pendingSummarizeBvids = pendingSummarizeBvids.filter(b => b !== d.bvid);
                     } else if (eventType === 'error') {
                         const badge = document.getElementById(`badge-${d.bvid || ''}`);
                         if (badge) {
@@ -990,8 +1066,13 @@ function listenAutoSummarize(taskId, progressEl) {
                         }
                     } else if (eventType === 'done') {
                         isDone = true;
-                        progressEl.innerHTML = `<div style="color:var(--success);">✨ 自动总结完成</div>`;
-                        setTimeout(() => { progressEl.innerHTML = ''; }, 3000);
+                        const remaining = pendingSummarizeBvids.length;
+                        if (remaining > 0) {
+                            progressEl.innerHTML = `<div style="color:var(--warning);">已完成，仍有 ${remaining} 个视频可重试</div>`;
+                        } else {
+                            progressEl.innerHTML = `<div style="color:var(--success);">✨ 总结完成</div>`;
+                        }
+                        setTimeout(() => renderPendingSummarizeAction(), 2200);
                         return;
                     }
                 }

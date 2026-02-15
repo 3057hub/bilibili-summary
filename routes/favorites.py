@@ -13,16 +13,16 @@ from routes.deps import (
     process_single_video, run_batch,
 )
 from summarize import sanitize_filename
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["favorites"])
 
 
 class SummarizeBvidsRequest(BaseModel):
-    bvids: list[str]
+    bvids: list[str] = Field(default_factory=list, min_length=1, max_length=200)
     output_subdir: str = "favorites"
     model: str = ""
-    concurrency: int = 6
+    concurrency: int = Field(default=6, ge=1, le=20)
 
 
 @router.get("/favorites/list")
@@ -99,7 +99,7 @@ async def list_favorite_videos(fav_id: int, page: int = 1):
 
 @router.post("/favorites/summarize")
 async def summarize_favorite_bvids(req: SummarizeBvidsRequest):
-    """Summarize specific BVIDs from favorites (auto-trigger from browse)."""
+    """Summarize specific BVIDs from favorites."""
     import asyncio
     import time
     from routes.deps import credential, DEFAULT_MODEL
@@ -166,7 +166,8 @@ async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
         task_id = f"retry-{bvid}-{int(time.time()*1000)}"
 
         async def _run():
-            await process_single_video(bvid, DEFAULT_MODEL, output_subdir, task_id)
+            url = f"https://www.bilibili.com/video/{bvid}"
+            await process_single_video(url, DEFAULT_MODEL, output_subdir, task_id)
             await send_progress(task_id, "done", {"total": 1})
 
         asyncio.create_task(_run())

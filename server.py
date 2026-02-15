@@ -8,12 +8,13 @@ import os
 import asyncio
 import json
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bilibili_api import user as bili_user
 
@@ -59,22 +60,39 @@ app.include_router(auth_router)
 # Request Models
 # ---------------------------------------------------------------------------
 class SummarizeURLRequest(BaseModel):
-    urls: list[str]
+    urls: list[str] = Field(default_factory=list, min_length=1, max_length=200)
     model: str = ""
-    concurrency: int = 12
+    concurrency: int = Field(default=12, ge=1, le=20)
 
 
 class SummarizeUserRequest(BaseModel):
     user: str  # UID or name
-    count: int = 50
+    count: int = Field(default=50, ge=1, le=200)
     model: str = ""
-    concurrency: int = 12
+    concurrency: int = Field(default=12, ge=1, le=20)
 
 
 class SummarizeFavRequest(BaseModel):
-    count: int = 20
+    count: int = Field(default=20, ge=1, le=200)
     model: str = ""
-    concurrency: int = 12
+    concurrency: int = Field(default=12, ge=1, le=20)
+
+
+def _resolve_summary_file(path: str) -> Path | None:
+    """Resolve a summary file path safely under DATA_DIR/summary."""
+    summary_root = (DATA_DIR / "summary").resolve()
+    try:
+        target = (summary_root / path).resolve(strict=False)
+    except (RuntimeError, ValueError):
+        return None
+
+    if summary_root not in target.parents:
+        return None
+    if not target.is_file():
+        return None
+    if target.suffix.lower() != ".md":
+        return None
+    return target
 
 
 # ---------------------------------------------------------------------------
@@ -152,8 +170,8 @@ async def list_summaries():
 
 @app.get("/api/summary/{path:path}")
 async def read_summary(path: str):
-    filepath = DATA_DIR / "summary" / path
-    if not filepath.exists():
+    filepath = _resolve_summary_file(path)
+    if not filepath:
         return JSONResponse(status_code=404, content={"error": "Not found"})
     return {"content": filepath.read_text(encoding="utf-8"), "path": path}
 
