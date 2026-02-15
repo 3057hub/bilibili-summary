@@ -1266,7 +1266,7 @@ async function loadFavoriteVideos(favId, page, append) {
         currentFavVideos = append ? [...currentFavVideos, ...videos] : videos;
 
         document.getElementById('favBrowseSubtitle').textContent = `共 ${currentFavVideos.length} 个视频 (第 ${page} 页)`;
-        loadMore.style.display = favHasMore ? '' : 'none';
+        loadMore.style.display = favHasMore ? 'block' : 'none';
 
         renderFavoriteItems(currentFavVideos);
 
@@ -1616,7 +1616,7 @@ function closeFavReading() {
     document.getElementById('favReadingView').classList.remove('active');
     document.getElementById('favVideoGrid').style.display = '';
     document.getElementById('favAutoProgress').style.display = '';
-    document.getElementById('favLoadMore').style.display = favHasMore ? '' : 'none';
+    document.getElementById('favLoadMore').style.display = favHasMore ? 'block' : 'none';
 }
 
 async function retrySummarize(bvid) {
