@@ -141,6 +141,21 @@ async def unfavorite_video(fav_id: int, bvid: str):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@router.post("/favorites/{fav_id}/video/{bvid}/restore")
+async def restore_favorite_video(fav_id: int, bvid: str):
+    """Restore a previously removed video to a favorite folder."""
+    from routes.deps import credential
+    if not credential:
+        return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})
+
+    try:
+        v = video.Video(bvid=bvid, credential=credential)
+        await v.set_favorite(add_media_ids=[fav_id])
+        return {"success": True, "bvid": bvid, "fav_id": fav_id}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @router.post("/retry/{bvid}")
 async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
     """Force re-summarize a single video by deleting existing no_subtitle file."""

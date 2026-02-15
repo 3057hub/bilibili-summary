@@ -1585,6 +1585,44 @@ textarea {
     letter-spacing: 0.01em;
 }
 
+/* ===================== REUSABLE STATES ===================== */
+.ui-state {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--bg-card) 84%, transparent);
+    padding: 18px 16px;
+    text-align: center;
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.ui-state .spinner {
+    margin-bottom: 4px;
+}
+
+.ui-state-title {
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.ui-state-message {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.ui-state-action {
+    margin-top: 4px;
+}
+
+.ui-state-error .ui-state-title {
+    color: var(--error);
+}
+
 /* ===================== SCROLLBAR ===================== */
 ::-webkit-scrollbar {
     width: 5px;
@@ -2040,8 +2078,16 @@ textarea {
     border-color: var(--success);
 }
 
+.toast.toast-success {
+    border-color: var(--success);
+}
+
 .toast.toast-error {
     border-color: var(--error);
+}
+
+.toast.toast-info {
+    border-color: var(--info);
 }
 
 .toast-title {
@@ -2056,6 +2102,25 @@ textarea {
 
 .toast-message {
     color: var(--text-primary);
+}
+
+.toast-action {
+    margin-top: 10px;
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-xs);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-family: inherit;
+    font-weight: 600;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.toast-action:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 .toast-fadeout {

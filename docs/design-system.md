@@ -54,6 +54,24 @@ Tokens live in `/Users/jakevin/code/bilibili-summary/static/style.css` under `:r
   - Same dimensions and active state visuals.
   - Same tooltip and focus behavior.
 
+### UI States
+
+- Shared state primitive: `.ui-state` (`loading`, `empty`, `error`).
+- Use JS helper `renderState(container, config)` instead of ad-hoc inline HTML.
+- Required behavior:
+  - Loading, empty, and error states must use the same visual structure.
+  - Optional retry action uses the same button contract as other controls.
+
+### Status Semantics
+
+- Product-wide status vocabulary:
+  - `processing` => `处理中`
+  - `success` => `成功`
+  - `failed` => `失败`
+  - `no_subtitle` => `无字幕`
+  - `skipped` => `已跳过`
+- Use JS helpers `normalizeStatus()` and `statusText()` to avoid per-module wording drift.
+
 ## 4. Accessibility Rules
 
 - Focus states: use `:focus-visible` ring for all interactive controls.
@@ -70,5 +88,4 @@ Tokens live in `/Users/jakevin/code/bilibili-summary/static/style.css` under `:r
 ## 6. Next Iteration (v2)
 
 - Extract repeated utility patterns into clearer DS sections (`layout`, `surface`, `interactive`, `feedback`).
-- Add explicit empty/loading/error state primitives.
 - Introduce responsive breakpoints as tokens and normalize mobile spacing.

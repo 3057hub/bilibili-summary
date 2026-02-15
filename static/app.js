@@ -35,6 +35,79 @@ let currentBrowseItems = [];
 let favViewMode = localStorage.getItem('bilisummary-fav-view') || 'thumb';
 let currentFavVideos = [];
 
+const STATUS_META = {
+    processing: { label: '处理中', tone: 'info' },
+    success: { label: '成功', tone: 'success' },
+    failed: { label: '失败', tone: 'error' },
+    no_subtitle: { label: '无字幕', tone: 'warning' },
+    skipped: { label: '已跳过', tone: 'skip' },
+    pending: { label: '未总结', tone: 'muted' },
+};
+
+function normalizeStatus(raw) {
+    const map = {
+        done: 'success',
+        success: 'success',
+        summarizing: 'processing',
+        processing: 'processing',
+        error: 'failed',
+        failed: 'failed',
+        none: 'pending',
+        pending: 'pending',
+        no_subtitle: 'no_subtitle',
+        skipped: 'skipped',
+    };
+    return map[raw] || 'pending';
+}
+
+function statusText(raw) {
+    const key = normalizeStatus(raw);
+    return STATUS_META[key]?.label || STATUS_META.pending.label;
+}
+
+function renderState(container, {
+    type = 'empty', // loading | empty | error
+    title = '',
+    message = '',
+    actionText = '',
+    onAction = null,
+} = {}) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    const box = document.createElement('div');
+    box.className = `ui-state ui-state-${type}`;
+
+    if (type === 'loading') {
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        box.appendChild(spinner);
+    }
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'ui-state-title';
+    titleEl.textContent = title || (type === 'loading' ? '加载中' : type === 'error' ? '加载失败' : '暂无内容');
+    box.appendChild(titleEl);
+
+    if (message) {
+        const messageEl = document.createElement('div');
+        messageEl.className = 'ui-state-message';
+        messageEl.textContent = message;
+        box.appendChild(messageEl);
+    }
+
+    if (actionText && typeof onAction === 'function') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary ui-state-action';
+        btn.type = 'button';
+        btn.textContent = actionText;
+        btn.addEventListener('click', onAction);
+        box.appendChild(btn);
+    }
+
+    container.appendChild(box);
+}
+
 // ---------------------------------------------------------------------------
 // Navigation — static pages
 // ---------------------------------------------------------------------------
@@ -112,13 +185,13 @@ function startLogin() {
 
     loginEventSource.addEventListener('scanned', (e) => {
         const d = JSON.parse(e.data);
-        qrStatus.textContent = '📲 ' + d.message;
+        qrStatus.textContent = d.message || '二维码已扫描，请在手机上确认';
         qrStatus.className = 'qr-status scanned';
     });
 
     loginEventSource.addEventListener('done', (e) => {
         const d = JSON.parse(e.data);
-        qrStatus.textContent = '✓ ' + d.message;
+        qrStatus.textContent = d.message || '登录成功';
         qrStatus.className = 'qr-status success';
         loginEventSource.close();
         loginEventSource = null;
@@ -132,7 +205,7 @@ function startLogin() {
 
     loginEventSource.addEventListener('timeout', (e) => {
         const d = JSON.parse(e.data);
-        qrStatus.textContent = '⏰ ' + d.message;
+        qrStatus.textContent = d.message || '二维码已超时，请重试';
         qrStatus.className = 'qr-status error';
         loginEventSource.close();
         loginEventSource = null;
@@ -141,9 +214,9 @@ function startLogin() {
     loginEventSource.addEventListener('error', (e) => {
         try {
             const d = JSON.parse(e.data);
-            qrStatus.textContent = '✗ ' + d.message;
+            qrStatus.textContent = d.message || '连接失败';
         } catch {
-            qrStatus.textContent = '✗ 连接失败';
+            qrStatus.textContent = '连接失败';
         }
         qrStatus.className = 'qr-status error';
         if (loginEventSource) { loginEventSource.close(); loginEventSource = null; }
@@ -223,6 +296,49 @@ function showConfirm(message, {
     return showActionDialog({ title, message, confirmText, cancelText, danger });
 }
 
+function showToast({
+    title = '提示',
+    message = '',
+    tone = 'info', // info | success | error
+    actionText = '',
+    onAction = null,
+    duration = 5000,
+} = {}) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return null;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${tone}`;
+    toast.innerHTML = `
+        <div class="toast-title">${title}</div>
+        <div class="toast-message">${message}</div>
+        ${actionText ? `<button type="button" class="toast-action">${actionText}</button>` : ''}
+    `;
+    container.appendChild(toast);
+
+    const close = () => {
+        toast.classList.add('toast-fadeout');
+        setTimeout(() => toast.remove(), 280);
+    };
+
+    if (actionText && typeof onAction === 'function') {
+        const btn = toast.querySelector('.toast-action');
+        btn.addEventListener('click', async () => {
+            try {
+                await onAction();
+            } finally {
+                close();
+            }
+        });
+    }
+
+    if (duration > 0) {
+        setTimeout(close, duration);
+    }
+
+    return { close, element: toast };
+}
+
 async function doLogout() {
     const confirmed = await showConfirm('确定要退出登录吗？', {
         title: '退出登录',
@@ -251,7 +367,7 @@ async function loadSidebarBrowse() {
         summariesData = await res.json();
 
         if (!summariesData.categories || summariesData.categories.length === 0) {
-            container.innerHTML = '<div class="nav-item" style="color:var(--text-muted);cursor:default;font-size:12px;">暂无总结</div>';
+            renderState(container, { type: 'empty', title: '暂无总结', message: '先在“URL 模式”或“UP 主模式”生成内容' });
             return;
         }
 
@@ -290,7 +406,13 @@ async function loadSidebarBrowse() {
         container.innerHTML = html;
         lucide.createIcons({ nodes: [container] });
     } catch (err) {
-        container.innerHTML = `<div class="nav-item" style="color:var(--error);cursor:default;font-size:12px;">加载失败</div>`;
+        renderState(container, {
+            type: 'error',
+            title: '浏览目录加载失败',
+            message: '请稍后重试',
+            actionText: '重试',
+            onAction: () => loadSidebarBrowse(),
+        });
     }
 }
 loadSidebarBrowse();
@@ -379,6 +501,10 @@ function setBrowseViewMode(mode) {
 function renderBrowseItems(items) {
     const list = document.getElementById('browseList');
     if (!list) return;
+    if (!items || items.length === 0) {
+        renderState(list, { type: 'empty', title: '暂无内容', message: '该分类下还没有可展示的总结' });
+        return;
+    }
 
     if (browseViewMode === 'compact') {
         list.innerHTML = `<div class="browse-compact-list">${items.map(item => renderBrowseCompactItem(item)).join('')}</div>`;
@@ -390,9 +516,19 @@ function renderBrowseItems(items) {
 }
 
 function summaryBadge(status) {
-    const badgeClass = status === 'no_subtitle' ? 'no_subtitle' : (status || 'done');
-    const badgeTextMap = { done: '已总结', no_subtitle: '无字幕', none: '未总结', summarizing: '总结中' };
-    return { badgeClass, badgeText: badgeTextMap[badgeClass] || '已总结' };
+    const normalized = normalizeStatus(status);
+    const badgeClassMap = {
+        success: 'done',
+        no_subtitle: 'no_subtitle',
+        processing: 'summarizing',
+        failed: 'none',
+        pending: 'none',
+        skipped: 'done',
+    };
+    return {
+        badgeClass: badgeClassMap[normalized] || 'none',
+        badgeText: statusText(normalized),
+    };
 }
 
 function renderSharedThumbCard({
@@ -403,7 +539,7 @@ function renderSharedThumbCard({
     duration = '',
     badgeId = '',
     badgeClass = 'done',
-    badgeText = '已总结',
+    badgeText = '成功',
     metaLeft = '',
     metaRight = '',
     actionButtonHtml = '',
@@ -440,7 +576,7 @@ function renderSharedCompactItem({
     meta = '',
     badgeId = '',
     badgeClass = 'done',
-    badgeText = '已总结',
+    badgeText = '成功',
     actionButtonHtml = '',
     onClick = '',
     extraClass = '',
@@ -679,41 +815,41 @@ function listenProgress(taskId, prefix) {
         switch (eventType) {
             case 'start':
                 total = d.total;
-                addLog(logEl, `▶ 开始处理 ${d.total} 个视频 (并发: ${d.concurrency}, 模型: ${d.model})`, 'info');
+                addLog(logEl, `处理中: 共 ${d.total} 个视频 (并发 ${d.concurrency}, 模型 ${d.model})`, 'info');
                 break;
             case 'info':
-                addLog(logEl, `ℹ ${d.message}`, 'info');
+                addLog(logEl, d.message, 'info');
                 break;
             case 'processing':
-                addLog(logEl, `◌ ${d.title} — ${d.step}`, '');
+                addLog(logEl, `处理中: ${d.title} — ${d.step}`, '');
                 break;
             case 'skip':
                 completed++;
                 updateProgress(progressBar, statsEl, completed, total);
-                addLog(logEl, `→ 已存在，跳过: ${d.title}`, 'skip');
+                addLog(logEl, `已跳过: ${d.title}`, 'skip');
                 if (d.path) completedPaths.push({ title: d.title, path: d.path, status: 'skipped' });
                 break;
             case 'completed':
                 completed++;
                 updateProgress(progressBar, statsEl, completed, total);
                 if (d.status === 'no_subtitle') {
-                    addLog(logEl, `△ 无字幕: ${d.title}`, 'warning');
+                    addLog(logEl, `无字幕: ${d.title}`, 'warning');
                 } else {
-                    addLog(logEl, `✓ ${d.title} (${d.duration_sec}s)`, 'success');
+                    addLog(logEl, `成功: ${d.title} (${d.duration_sec}s)`, 'success');
                 }
                 if (d.path) completedPaths.push({ title: d.title, path: d.path, status: d.status, duration: d.duration_sec });
                 break;
             case 'error':
                 completed++;
                 updateProgress(progressBar, statsEl, completed, total);
-                addLog(logEl, `✗ ${d.title || ''}: ${d.message}`, 'error');
+                addLog(logEl, `失败: ${d.title || ''} ${d.message || ''}`.trim(), 'error');
                 break;
             case 'done':
                 isDone = true;
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon" style="width:14px;height:14px;"></i> 开始总结';
                 lucide.createIcons({ nodes: [submitBtn] });
-                addLog(logEl, `✨ 完成! 成功: ${d.success} | 跳过: ${d.skipped} | 无字幕: ${d.no_subtitle} | 失败: ${d.errors}`, 'info');
+                addLog(logEl, `完成: 成功 ${d.success} | 已跳过 ${d.skipped} | 无字幕 ${d.no_subtitle} | 失败 ${d.errors}`, 'info');
                 progressBar.style.width = '100%';
                 showInlineResults(resultsArea, completedPaths);
                 loadSidebarBrowse();
@@ -771,7 +907,7 @@ function listenProgress(taskId, prefix) {
         // Auto-reconnect if not done
         if (!isDone && retryCount < MAX_RETRIES) {
             retryCount++;
-            addLog(logEl, `↻ 重连中... (${retryCount}/${MAX_RETRIES})`, 'warning');
+            addLog(logEl, `连接中断，正在重连 (${retryCount}/${MAX_RETRIES})`, 'warning');
             await new Promise(r => setTimeout(r, 2000));
             return connectSSE();
         }
@@ -780,7 +916,7 @@ function listenProgress(taskId, prefix) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon" style="width:14px;height:14px;"></i> 开始总结';
             lucide.createIcons({ nodes: [submitBtn] });
-            addLog(logEl, '✗ 连接中断，可重新点击开始总结', 'error');
+            addLog(logEl, '连接中断，可重新点击开始总结', 'error');
         }
     }
 
@@ -802,9 +938,7 @@ async function showInlineResults(container, results) {
         const badgeClass = r.status === 'success' ? 'badge-success' :
             r.status === 'skipped' ? 'badge-skip' :
                 r.status === 'no_subtitle' ? 'badge-warning' : 'badge-error';
-        const badgeText = r.status === 'success' ? '✓ 完成' :
-            r.status === 'skipped' ? '→ 已存在' :
-                r.status === 'no_subtitle' ? '△ 无字幕' : '✗ 失败';
+        const badgeText = statusText(r.status);
 
         const card = document.createElement('div');
         card.className = 'result-card';
@@ -936,6 +1070,44 @@ let currentFavPage = 1;
 let favHasMore = false;
 const favVideoData = new Map(); // bvid -> { summaryPath, title, ... }
 let pendingSummarizeBvids = [];
+let activeUndoToast = null;
+
+async function restoreFavoriteVideo(favId, bvid) {
+    const res = await fetch(`/api/favorites/${favId}/video/${bvid}/restore`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return data;
+}
+
+function notifyUnfavoriteUndo({ favId, bvid, title }) {
+    if (activeUndoToast?.close) activeUndoToast.close();
+
+    activeUndoToast = showToast({
+        title: '已取消收藏',
+        message: title ? `已移除: ${title}` : `已移除: ${bvid}`,
+        tone: 'info',
+        actionText: '撤销',
+        duration: 7000,
+        onAction: async () => {
+            try {
+                await restoreFavoriteVideo(favId, bvid);
+                showToast({
+                    title: '恢复成功',
+                    message: title ? `已恢复: ${title}` : `已恢复: ${bvid}`,
+                    tone: 'success',
+                    duration: 2600,
+                });
+                if (currentFavId === favId) {
+                    await loadFavoriteVideos(favId, 1, false);
+                }
+            } catch (err) {
+                await showAlert(`恢复收藏失败: ${err.message}`, '操作失败');
+            }
+        },
+    });
+}
 
 async function loadFavoriteFolders() {
     const container = document.getElementById('sidebarFavorites');
@@ -945,7 +1117,7 @@ async function loadFavoriteFolders() {
         const res = await fetch('/api/favorites/list');
         const data = await res.json();
         if (data.error) {
-            container.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted);">未登录</div>';
+            renderState(container, { type: 'empty', title: '未登录', message: '请先登录 Bilibili 以加载收藏夹' });
             return;
         }
 
@@ -994,7 +1166,13 @@ async function loadFavoriteFolders() {
         });
 
     } catch (err) {
-        container.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:var(--text-muted);">加载失败</div>';
+        renderState(container, {
+            type: 'error',
+            title: '收藏夹加载失败',
+            message: '请检查网络后重试',
+            actionText: '重试',
+            onAction: () => loadFavoriteFolders(),
+        });
     }
 }
 
@@ -1053,7 +1231,7 @@ function selectFavoriteFolder(favId, title) {
 
     // Clear and load — reset display states
     const grid = document.getElementById('favVideoGrid');
-    grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><span class="spinner"></span> 加载中...</div>';
+    renderState(grid, { type: 'loading', title: '加载中', message: '正在获取收藏夹视频' });
     grid.style.display = '';
     document.getElementById('favAutoProgress').innerHTML = '';
     document.getElementById('favReadingView').classList.remove('active');
@@ -1072,6 +1250,13 @@ async function loadFavoriteVideos(favId, page, append) {
         const data = await res.json();
         if (data.error) {
             document.getElementById('favBrowseSubtitle').textContent = data.error;
+            renderState(grid, {
+                type: 'error',
+                title: '收藏夹加载失败',
+                message: data.error,
+                actionText: '重试',
+                onAction: () => loadFavoriteVideos(favId, page, append),
+            });
             return;
         }
 
@@ -1097,6 +1282,13 @@ async function loadFavoriteVideos(favId, page, append) {
 
     } catch (err) {
         document.getElementById('favBrowseSubtitle').textContent = '加载失败: ' + err.message;
+        renderState(grid, {
+            type: 'error',
+            title: '收藏夹加载失败',
+            message: err.message,
+            actionText: '重试',
+            onAction: () => loadFavoriteVideos(favId, page, append),
+        });
     }
 }
 
@@ -1120,6 +1312,10 @@ function setFavViewMode(mode) {
 function renderFavoriteItems(videos) {
     const grid = document.getElementById('favVideoGrid');
     if (!grid) return;
+    if (!videos || videos.length === 0) {
+        renderState(grid, { type: 'empty', title: '暂无视频', message: '该收藏夹暂无可展示内容' });
+        return;
+    }
 
     if (favViewMode === 'compact') {
         grid.className = 'browse-compact-list';
@@ -1222,7 +1418,7 @@ async function autoSummarizeVideos(bvids) {
 
     const progressEl = document.getElementById('favAutoProgress');
     progressEl.innerHTML = `
-        <div>↻ 正在总结 ${targets.length} 个视频...</div>
+        <div>处理中: 正在总结 ${targets.length} 个视频</div>
         <div class="mini-log" id="favMiniLog"></div>
     `;
 
@@ -1231,7 +1427,7 @@ async function autoSummarizeVideos(bvids) {
         const badge = document.getElementById(`badge-${bvid}`);
         if (badge) {
             badge.className = 'summary-badge summarizing';
-            badge.textContent = '总结中';
+            badge.textContent = statusText('processing');
         }
     });
 
@@ -1250,7 +1446,7 @@ async function autoSummarizeVideos(bvids) {
         // Listen to SSE for auto-summarize progress
         listenAutoSummarize(data.task_id, progressEl);
     } catch (err) {
-        progressEl.innerHTML = `<div style="color:var(--error);">自动总结失败: ${err.message}</div>`;
+        renderState(progressEl, { type: 'error', title: '自动总结失败', message: err.message });
         setTimeout(() => renderPendingSummarizeAction(), 2000);
     }
 }
@@ -1299,10 +1495,10 @@ function listenAutoSummarize(taskId, progressEl) {
                         if (badge) {
                             if (d.status === 'no_subtitle') {
                                 badge.className = 'summary-badge no_subtitle';
-                                badge.textContent = '无字幕';
+                                badge.textContent = statusText('no_subtitle');
                             } else {
                                 badge.className = 'summary-badge done';
-                                badge.textContent = '已总结';
+                                badge.textContent = statusText('success');
                                 // Update JS Map for event delegation
                                 const vdata = favVideoData.get(d.bvid);
                                 if (vdata && d.path) {
@@ -1311,8 +1507,7 @@ function listenAutoSummarize(taskId, progressEl) {
                             }
                         }
                         if (miniLog) {
-                            const icon = d.status === 'no_subtitle' ? '△' : '✓';
-                            miniLog.innerHTML += `<div class="log-line">${icon} ${escapeHtml(d.title)}</div>`;
+                            miniLog.innerHTML += `<div class="log-line">${statusText(d.status)}: ${escapeHtml(d.title)}</div>`;
                             miniLog.scrollTop = miniLog.scrollHeight;
                         }
                     } else if (eventType === 'skip') {
@@ -1321,7 +1516,7 @@ function listenAutoSummarize(taskId, progressEl) {
                         const badge = document.getElementById(`badge-${d.bvid || ''}`);
                         if (badge) {
                             badge.className = 'summary-badge none';
-                            badge.textContent = '失败';
+                            badge.textContent = statusText('failed');
                         }
                     } else if (eventType === 'done') {
                         isDone = true;
@@ -1329,7 +1524,7 @@ function listenAutoSummarize(taskId, progressEl) {
                         if (remaining > 0) {
                             progressEl.innerHTML = `<div style="color:var(--warning);">已完成，仍有 ${remaining} 个视频可重试</div>`;
                         } else {
-                            progressEl.innerHTML = `<div style="color:var(--success);">✨ 总结完成</div>`;
+                            progressEl.innerHTML = `<div style="color:var(--success);">处理完成</div>`;
                         }
                         setTimeout(() => renderPendingSummarizeAction(), 2200);
                         return;
@@ -1359,7 +1554,7 @@ async function showVideoSummary(bvid, path) {
     const grid = document.getElementById('favVideoGrid');
     const loadMore = document.getElementById('favLoadMore');
 
-    readingContent.innerHTML = '<p style="color:var(--text-muted);">加载中...</p>';
+    renderState(readingContent, { type: 'loading', title: '加载中', message: '正在读取总结内容' });
     grid.style.display = 'none';
     loadMore.style.display = 'none';
     document.getElementById('favAutoProgress').style.display = 'none';
@@ -1370,7 +1565,7 @@ async function showVideoSummary(bvid, path) {
         const encodedPath = path.split('/').map(s => encodeURIComponent(s)).join('/');
         const res = await fetch(`/api/summary/${encodedPath}`);
         if (!res.ok) {
-            readingContent.innerHTML = `<p style="color:var(--error);">HTTP ${res.status}: 无法加载总结</p>`;
+            renderState(readingContent, { type: 'error', title: '加载失败', message: `HTTP ${res.status}: 无法加载总结` });
             return;
         }
         const data = await res.json();
@@ -1410,10 +1605,10 @@ async function showVideoSummary(bvid, path) {
             }
             setupExternalLinks(readingContent);
         } else {
-            readingContent.innerHTML = '<p style="color:var(--error);">总结内容为空</p>';
+            renderState(readingContent, { type: 'empty', title: '暂无内容', message: '总结内容为空' });
         }
     } catch (err) {
-        readingContent.innerHTML = `<p style="color:var(--error);">加载失败: ${err.message}</p>`;
+        renderState(readingContent, { type: 'error', title: '加载失败', message: err.message });
     }
 }
 
@@ -1426,18 +1621,18 @@ function closeFavReading() {
 
 async function retrySummarize(bvid) {
     const readingContent = document.getElementById('favReadingContent');
-    readingContent.innerHTML = '<p style="color:var(--text-muted);">↻ 正在重新获取字幕并生成总结...</p>';
+    renderState(readingContent, { type: 'loading', title: '处理中', message: '正在重新获取字幕并生成总结' });
 
     try {
         const res = await fetch(`/api/retry/${bvid}`, { method: 'POST' });
         const data = await res.json();
         if (data.error) {
-            readingContent.innerHTML = `<p style="color:var(--error);">重试失败: ${data.error}</p>`;
+            renderState(readingContent, { type: 'error', title: '重试失败', message: data.error });
             return;
         }
 
         const taskId = data.task_id;
-        readingContent.innerHTML = '<p style="color:var(--text-muted);">◌ 正在获取字幕...</p>';
+        renderState(readingContent, { type: 'loading', title: '处理中', message: '正在获取字幕' });
 
         // Listen to SSE for progress (server sends named events)
         const evtSrc = new EventSource(`/api/progress/${taskId}`);
@@ -1445,7 +1640,7 @@ async function retrySummarize(bvid) {
         evtSrc.addEventListener('processing', (e) => {
             try {
                 const d = JSON.parse(e.data);
-                readingContent.innerHTML = `<p style="color:var(--text-muted);">◌ ${d.step || '处理中'}...</p>`;
+                renderState(readingContent, { type: 'loading', title: '处理中', message: d.step || '处理中' });
             } catch (_) { }
         });
 
@@ -1457,13 +1652,13 @@ async function retrySummarize(bvid) {
                 if (d.status === 'no_subtitle') {
                     if (badge) {
                         badge.className = 'summary-badge no_subtitle';
-                        badge.textContent = '无字幕';
+                        badge.textContent = statusText('no_subtitle');
                     }
-                    readingContent.innerHTML = '<p style="color:var(--warning);">△ 仍然无法获取字幕，可稍后再试</p>';
+                    renderState(readingContent, { type: 'error', title: '无字幕', message: '仍然无法获取字幕，可稍后再试' });
                 } else {
                     if (badge) {
                         badge.className = 'summary-badge done';
-                        badge.textContent = '已总结';
+                        badge.textContent = statusText('success');
                     }
                     const vdata = favVideoData.get(bvid);
                     if (vdata && d.path) {
@@ -1478,9 +1673,9 @@ async function retrySummarize(bvid) {
             evtSrc.close();
             try {
                 const d = JSON.parse(e.data);
-                readingContent.innerHTML = `<p style="color:var(--error);">重试失败: ${d.message || '未知错误'}</p>`;
+                renderState(readingContent, { type: 'error', title: '重试失败', message: d.message || '未知错误' });
             } catch (_) {
-                readingContent.innerHTML = '<p style="color:var(--error);">连接中断</p>';
+                renderState(readingContent, { type: 'error', title: '连接中断', message: '请稍后重试' });
             }
         });
 
@@ -1492,7 +1687,7 @@ async function retrySummarize(bvid) {
             evtSrc.close();
         };
     } catch (err) {
-        readingContent.innerHTML = `<p style="color:var(--error);">重试失败: ${err.message}</p>`;
+        renderState(readingContent, { type: 'error', title: '重试失败', message: err.message });
     }
 }
 
@@ -1502,8 +1697,8 @@ async function asrSummarize(bvid) {
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
-        <div class="toast-title">🎤 语音识别总结</div>
-        <div class="toast-message">◌ 准备中...</div>
+        <div class="toast-title">语音识别总结</div>
+        <div class="toast-message">处理中: 准备中...</div>
     `;
     container.appendChild(toast);
     const msgEl = toast.querySelector('.toast-message');
@@ -1512,7 +1707,7 @@ async function asrSummarize(bvid) {
         const res = await fetch(`/api/asr-summarize/${bvid}`, { method: 'POST' });
         if (!res.ok) {
             const err = await res.json();
-            msgEl.textContent = `✗ ${err.error || '未知错误'}`;
+            msgEl.textContent = `失败: ${err.error || '未知错误'}`;
             toast.classList.add('toast-error');
             setTimeout(() => { toast.classList.add('toast-fadeout'); setTimeout(() => toast.remove(), 300); }, 5000);
             return;
@@ -1536,20 +1731,20 @@ async function asrSummarize(bvid) {
                     const d = JSON.parse(line.slice(6));
 
                     if (d.step === 'error') {
-                        msgEl.textContent = `✗ ${d.message}`;
+                        msgEl.textContent = `失败: ${d.message}`;
                         toast.classList.add('toast-error');
                         setTimeout(() => { toast.classList.add('toast-fadeout'); setTimeout(() => toast.remove(), 300); }, 8000);
                         return;
                     }
 
                     if (d.step === 'done') {
-                        msgEl.textContent = `✓ 总结完成！(${d.llm_time}s)`;
+                        msgEl.textContent = `成功: 总结完成（${d.llm_time}s）`;
                         toast.classList.add('toast-done');
                         // Update badge
                         const badge = document.getElementById(`badge-${bvid}`);
                         if (badge) {
                             badge.className = 'summary-badge done';
-                            badge.textContent = '已总结';
+                            badge.textContent = statusText('success');
                         }
                         const vdata = favVideoData.get(bvid);
                         if (vdata && d.path) {
@@ -1565,16 +1760,12 @@ async function asrSummarize(bvid) {
                     }
 
                     // Progress steps
-                    const icons = {
-                        'info': '◌', 'audio_url': '◌', 'download': '↓',
-                        'downloaded': '✓', 'asr': '♫', 'transcribed': '✓', 'summarize': '◌'
-                    };
-                    msgEl.textContent = `${icons[d.step] || '◌'} ${d.message}`;
+                    msgEl.textContent = `处理中: ${d.message}`;
                 } catch (_) { }
             }
         }
     } catch (err) {
-        msgEl.textContent = `✗ ${err.message}`;
+        msgEl.textContent = `失败: ${err.message}`;
         toast.classList.add('toast-error');
         setTimeout(() => { toast.classList.add('toast-fadeout'); setTimeout(() => toast.remove(), 300); }, 5000);
     }
@@ -1582,6 +1773,8 @@ async function asrSummarize(bvid) {
 
 async function unfavoriteVideo(bvid, cardEl) {
     if (!currentFavId) return;
+    const removedVideo = favVideoData.get(bvid) || { title: bvid };
+    const favId = currentFavId;
 
     // Visual feedback
     if (cardEl) {
@@ -1610,6 +1803,7 @@ async function unfavoriteVideo(bvid, cardEl) {
             setTimeout(() => cardEl.remove(), 300);
         }
         favVideoData.delete(bvid);
+        notifyUnfavoriteUndo({ favId, bvid, title: removedVideo.title });
     } catch (err) {
         await showAlert('取消收藏失败: ' + err.message, '操作失败');
         if (cardEl) {
@@ -1621,6 +1815,8 @@ async function unfavoriteVideo(bvid, cardEl) {
 
 async function unfavoriteFromReading(bvid) {
     if (!currentFavId) return;
+    const removedVideo = favVideoData.get(bvid) || { title: bvid };
+    const favId = currentFavId;
 
     try {
         const res = await fetch(`/api/favorites/${currentFavId}/video/${bvid}`, {
@@ -1637,6 +1833,7 @@ async function unfavoriteFromReading(bvid) {
         favVideoData.delete(bvid);
         // Go back to grid
         closeFavReading();
+        notifyUnfavoriteUndo({ favId, bvid, title: removedVideo.title });
     } catch (err) {
         await showAlert('取消收藏失败: ' + err.message, '操作失败');
     }
@@ -1689,29 +1886,29 @@ async function saveSettings() {
         const data = await res.json();
         if (data.success) {
             statusEl.style.color = 'var(--success)';
-            statusEl.textContent = '✓ 已保存';
+            statusEl.textContent = '保存成功';
             // Reload to show masked token
             setTimeout(() => loadSettings(), 500);
         } else {
             statusEl.style.color = 'var(--error)';
-            statusEl.textContent = '✗ 保存失败: ' + (data.error || '');
+            statusEl.textContent = '保存失败: ' + (data.error || '');
         }
     } catch (err) {
         statusEl.style.color = 'var(--error)';
-        statusEl.textContent = '✗ 保存失败: ' + err.message;
+        statusEl.textContent = '保存失败: ' + err.message;
     }
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
 }
 
 async function loadModels() {
     const listEl = document.getElementById('modelList');
-    listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">◌ 加载中...</p>';
+    renderState(listEl, { type: 'loading', title: '加载中', message: '正在获取模型列表' });
 
     try {
         const res = await fetch('/api/models');
         if (!res.ok) {
             const err = await res.json();
-            listEl.innerHTML = `<p style="color:var(--error);font-size:13px;">✗ ${err.error || '加载失败'}</p>`;
+            renderState(listEl, { type: 'error', title: '加载失败', message: err.error || '加载失败' });
             return;
         }
         const data = await res.json();
@@ -1719,7 +1916,7 @@ async function loadModels() {
         const current = data.current || '';
 
         if (models.length === 0) {
-            listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">没有可用模型</p>';
+            renderState(listEl, { type: 'empty', title: '没有可用模型', message: '请检查 API 配置' });
             return;
         }
 
@@ -1728,12 +1925,12 @@ async function loadModels() {
             return `<div class="model-item${isActive ? ' active' : ''}" onclick="selectModel('${m.id}', this)">
                 <div class="model-name">${m.id}</div>
                 <div class="model-owner">${m.owned_by || ''}</div>
-                ${isActive ? '<span class="model-check">✓</span>' : ''}
+                ${isActive ? '<span class="model-check">当前</span>' : ''}
             </div>`;
         }).join('');
 
     } catch (err) {
-        listEl.innerHTML = `<p style="color:var(--error);font-size:13px;">✗ ${err.message}</p>`;
+        renderState(listEl, { type: 'error', title: '加载失败', message: err.message });
     }
 }
 
@@ -1745,7 +1942,7 @@ async function selectModel(modelId, el) {
         if (check) check.remove();
     });
     el.classList.add('active');
-    el.insertAdjacentHTML('beforeend', '<span class="model-check">✓</span>');
+    el.insertAdjacentHTML('beforeend', '<span class="model-check">当前</span>');
 
     // Save to backend
     try {
