@@ -5,7 +5,7 @@ Build with: pyinstaller BiliSummary.spec
 """
 
 import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
 
@@ -40,15 +40,23 @@ hiddenimports = [
     'httptools',
     'httptools.parser',
     'httptools.parser.parser',
+    'av',
+    'routes',
+    'routes.deps',
+    'routes.favorites',
+    'routes.asr',
+    'routes.settings',
+    'routes.auth',
 ]
 
 # Add bilibili_api submodules
 hiddenimports += collect_submodules('bilibili_api')
+hiddenimports += collect_submodules('av')
 
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
+    binaries=collect_dynamic_libs('av'),
     datas=[
         ('static', 'static'),           # Bundle static/ directory
         ('config.toml', '.'),            # Bundle config.toml
