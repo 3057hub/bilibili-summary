@@ -86,13 +86,28 @@ async def asr_summarize(bvid: str, output_subdir: str = ""):
                 no_hires=True,
             )
 
-            audio_stream = None
-            for s in streams:
-                if hasattr(s, 'audio_quality'):
-                    audio_stream = s
-                    break
+            # detect_best_streams returns:
+            # - DASH: [VideoStreamDownloadURL, AudioStreamDownloadURL | None]
+            # - FLV/MP4: [FLVStreamDownloadURL] or [MP4StreamDownloadURL]
+            audio_url = None
+            if detector.check_flv_mp4_stream():
+                # FLV/MP4: combined audio+video stream
+                if streams and streams[0] and hasattr(streams[0], 'url'):
+                    audio_url = streams[0].url
+                    print(f"[ASR] Using FLV/MP4 stream")
+            else:
+                # DASH: audio is at index 1
+                if len(streams) >= 2 and streams[1] is not None and hasattr(streams[1], 'url'):
+                    audio_url = streams[1].url
+                    print(f"[ASR] Using DASH audio stream")
+                else:
+                    for s in streams:
+                        if s is not None and hasattr(s, 'audio_quality'):
+                            audio_url = s.url
+                            print(f"[ASR] Using fallback audio stream")
+                            break
 
-            if not audio_stream:
+            if not audio_url:
                 yield f"data: {json.dumps({'step': 'error', 'message': '无法获取音频流（可能是会员专属视频）'})}\n\n"
                 return
 
@@ -106,7 +121,7 @@ async def asr_summarize(bvid: str, output_subdir: str = ""):
             for dl_attempt in range(3):
                 try:
                     async with aiohttp.ClientSession() as session:
-                        async with session.get(audio_stream.url, headers=headers) as resp:
+                        async with session.get(audio_url, headers=headers) as resp:
                             if resp.status == 200:
                                 audio_data = await resp.read()
                                 break
