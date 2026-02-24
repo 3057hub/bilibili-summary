@@ -161,14 +161,16 @@ async def restore_favorite_video(fav_id: int, bvid: str):
 
 
 @router.post("/retry/{bvid}")
-async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
-    """Force re-summarize a single video by deleting existing no_subtitle file."""
+async def retry_summarize(bvid: str, output_subdir: str = ""):
+    """Force re-summarize a single video by deleting existing summary file.
+    If output_subdir is not provided, auto-detect from existing files.
+    """
     import asyncio
     import time
-    from routes.deps import credential, DEFAULT_MODEL
+    from routes.deps import credential, ai_client, DEFAULT_MODEL
 
-    if not credential:
-        return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})
+    if not ai_client:
+        return JSONResponse(status_code=400, content={"error": "AI 未配置"})
 
     try:
         v = video.Video(bvid=bvid, credential=credential)
@@ -176,17 +178,55 @@ async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
         title = info.get("title", bvid)
         safe_title = sanitize_filename(title)
 
-        nosub_path = DATA_DIR / "summary" / output_subdir / "no_subtitle" / f"{safe_title}.md"
+        # Auto-detect output_subdir from existing summary files
+        detected_subdir = output_subdir
+        if not detected_subdir:
+            summary_root = DATA_DIR / "summary"
+            # Check normal summaries first, then no_subtitle
+            for subdir in ["standalone", "favorites"]:
+                if (summary_root / subdir / f"{safe_title}.md").exists():
+                    detected_subdir = subdir
+                    break
+                if (summary_root / subdir / "no_subtitle" / f"{safe_title}.md").exists():
+                    detected_subdir = subdir
+                    break
+            if not detected_subdir:
+                users_dir = summary_root / "users"
+                if users_dir.exists():
+                    for uid_folder in users_dir.iterdir():
+                        if uid_folder.is_dir():
+                            if (uid_folder / f"{safe_title}.md").exists():
+                                detected_subdir = f"users/{uid_folder.name}"
+                                break
+                            if (uid_folder / "no_subtitle" / f"{safe_title}.md").exists():
+                                detected_subdir = f"users/{uid_folder.name}"
+                                break
+            if not detected_subdir:
+                detected_subdir = "standalone"
+
+        # Remove existing normal summary
+        normal_path = DATA_DIR / "summary" / detected_subdir / f"{safe_title}.md"
+        if normal_path.exists():
+            normal_path.unlink()
+            meta_json = normal_path.with_suffix(".meta.json")
+            if meta_json.exists():
+                meta_json.unlink(missing_ok=True)
+
+        # Remove existing no_subtitle summary
+        nosub_path = DATA_DIR / "summary" / detected_subdir / "no_subtitle" / f"{safe_title}.md"
         if nosub_path.exists():
             nosub_path.unlink()
+            meta_json = nosub_path.with_suffix(".meta.json")
+            if meta_json.exists():
+                meta_json.unlink(missing_ok=True)
 
-        clear_retry_count(output_subdir, safe_title)
+        clear_retry_count(detected_subdir, safe_title)
 
         task_id = f"retry-{bvid}-{int(time.time()*1000)}"
 
         async def _run():
             url = f"https://www.bilibili.com/video/{bvid}"
-            await process_single_video(url, DEFAULT_MODEL, output_subdir, task_id)
+            await process_single_video(url, DEFAULT_MODEL, detected_subdir, task_id)
             await send_progress(task_id, "done", {"total": 1})
 
         asyncio.create_task(_run())
@@ -194,3 +234,4 @@ async def retry_summarize(bvid: str, output_subdir: str = "favorites"):
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+

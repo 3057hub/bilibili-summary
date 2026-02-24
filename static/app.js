@@ -693,14 +693,14 @@ function renderReadingActions(containerId, {
     if (!container) return;
 
     const buttons = [];
+    if (bvid && enableRetry) {
+        buttons.push(
+            `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')"><i data-lucide="refresh-cw" class="lucide-icon icon-xs"></i> 重新总结</button>`
+        );
+    }
     if (bvid && showOpen) {
         buttons.push(
             `<button class="action-btn action-btn-open" onclick="openExternal('https://www.bilibili.com/video/${bvid}')"><i data-lucide="external-link" class="lucide-icon icon-xs"></i> 打开 B站</button>`
-        );
-    }
-    if (bvid && isNoSub && enableRetry) {
-        buttons.push(
-            `<button class="action-btn action-btn-retry" onclick="retrySummarize('${bvid}')"><i data-lucide="refresh-cw" class="lucide-icon icon-xs"></i> 重试字幕总结</button>`
         );
     }
     if (bvid && isNoSub && enableAsr) {
@@ -747,13 +747,12 @@ async function openSummary(encodedPath) {
         const bvidMatch = data.content.match(/\*\*BV号\*\*:\s*(BV\w+)/);
         const bvid = bvidMatch ? bvidMatch[1] : '';
         const isNoSub = data.content.includes('无法获取字幕');
-        // Browse page keeps actions aligned with favorites, but retry/asr are disabled here.
         renderReadingActions('readingActions', {
             bvid,
             isNoSub,
             showOpen: true,
             showUnfav: currentBrowseType === 'favorites' && !!defaultFavId,
-            enableRetry: false,
+            enableRetry: true,
             enableAsr: false,
         });
 
@@ -1676,7 +1675,10 @@ function closeFavReading() {
 }
 
 async function retrySummarize(bvid) {
-    const readingContent = document.getElementById('favReadingContent');
+    // Support both browse and favorites reading views
+    const favView = document.getElementById('favReadingView');
+    const isFavView = favView && favView.classList.contains('active');
+    const readingContent = document.getElementById(isFavView ? 'favReadingContent' : 'readingContent');
     renderState(readingContent, { type: 'loading', title: '处理中', message: '正在重新获取字幕并生成总结' });
 
     try {
