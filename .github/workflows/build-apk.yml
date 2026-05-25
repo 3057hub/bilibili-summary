@@ -42,8 +42,8 @@ jobs:
         timeout-minutes: 60
 
       - name: Dump build log on failure
-       if: failure()
-       run: tail -300 build-log.txt || true
+        if: failure()
+        run: tail -300 build-log.txt || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
