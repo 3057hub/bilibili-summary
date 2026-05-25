@@ -1,0 +1,68 @@
+name: Build APK (Chaquopy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-apk-chaquopy.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses 2>/dev/null || true
+
+      - name: Install Gradle
+        run: |
+          sudo apt-get install -y gradle
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle assembleDebug 2>&1 | tee build-log.txt
+        timeout-minutes: 30
+
+      - name: Dump build log on failure
+        if: failure()
+        working-directory: android
+        run: tail -300 build-log.txt || true
+
+      - name: Locate APK
+        if: always()
+        run: |
+          echo "=== Searching for APK ==="
+          find android -name "*.apk" -type f 2>/dev/null || true
+          mkdir -p bin
+          cp android/app/build/outputs/apk/debug/*.apk bin/ 2>/dev/null || true
+
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BiliSummary-debug
+          path: |
+            bin/*.apk
+            android/app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      - name: Upload build log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: android/build-log.txt
+          retention-days: 7

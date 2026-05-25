@@ -1,0 +1,8 @@
+# BiliSummary 视频 URL 列表（CLI 模式用）
+summary-videos = []
+
+[android]
+enable_background_monitor = false
+enable_push_notification = false
+enable_cloud_sync = false
+enable_asr = false
