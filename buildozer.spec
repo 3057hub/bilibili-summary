@@ -56,6 +56,9 @@ android.minapi = 26
 # (int) Android NDK version to use
 android.ndk = 25c
 
+# (str) Python version to use (3.11 is stable, avoid 3.14)
+p4a.python_version = 3.11
+
 # (int) Android SDK version to use
 android.sdk = 34
 
