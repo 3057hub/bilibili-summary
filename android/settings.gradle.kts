@@ -3,7 +3,7 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven { url "https://chaquo.com/maven" }
+        maven("https://chaquo.com/maven")
     }
 }
 @Suppress("UnstableApiUsage")
