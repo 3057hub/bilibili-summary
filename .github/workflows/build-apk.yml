@@ -38,8 +38,8 @@ jobs:
         with:
           path: |
             .buildozer/android/platform
-          key: buildozer-v2-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-v2-
+          key: buildozer-v4-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-v4-
 
       - name: Build APK
         run: |
@@ -58,7 +58,6 @@ jobs:
           echo "=== Searching for APK ==="
           find . -name "*.apk" -type f 2>/dev/null || true
           mkdir -p bin
-          # Buildozer may put APK in .buildozer tree, copy to bin/
           cp .buildozer/android/platform/build-arm64-v8a/dists/bilisummary*/bin/*.apk bin/ 2>/dev/null || true
 
       - name: Upload APK artifact
