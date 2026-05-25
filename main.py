@@ -12,24 +12,51 @@ import time
 import traceback
 import datetime
 
-# Fix emoji printing on Windows (GBK console can't encode emoji)
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
-# Crash log path on Android
 CRASH_LOG = '/data/data/com.bilisummary.bilisummary/files/crash.log'
+HEARTBEAT = '/data/data/com.bilisummary.bilisummary/files/heartbeat.txt'
 
 
-def log_crash(msg):
-    """Write crash info to a file on device for debugging."""
+def heartbeat(msg):
+    """Write heartbeat to track progress, even if crash happens later."""
     try:
-        ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        with open(CRASH_LOG, 'a', encoding='utf-8') as f:
+        ts = datetime.datetime.now().strftime('%H:%M:%S')
+        with open(HEARTBEAT, 'a', encoding='utf-8') as f:
             f.write(f'[{ts}] {msg}\n')
     except Exception:
         pass
+
+
+def show_android_error(title, msg):
+    """Show an Android AlertDialog with error info - no Kivy needed."""
+    try:
+        from jnius import autoclass
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        activity = PythonActivity.mActivity
+        AlertDialog = autoclass('android.app.AlertDialog$Builder')
+        dialog = AlertDialog(activity)
+        dialog.setTitle(title)
+        dialog.setMessage(str(msg)[:2000])
+        dialog.setPositiveButton('OK', None)
+        dialog.show()
+    except Exception:
+        pass
+
+
+heartbeat('=== App started ===')
+
+# Global crash handler
+def global_excepthook(exc_type, exc_value, exc_tb):
+    tb_text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    heartbeat(f'FATAL: {tb_text}')
+    show_android_error('App Crashed', tb_text)
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = global_excepthook
 
 
 def get_bundle_dir():
@@ -50,109 +77,87 @@ def get_data_dir():
 
 os.environ['BILISUMMARY_BUNDLE_DIR'] = get_bundle_dir()
 os.environ['BILISUMMARY_DATA_DIR'] = get_data_dir()
+heartbeat('Paths set')
 
+# --- Import server ---
+heartbeat('Importing server...')
 try:
     from server import app as fastapi_app
     import uvicorn
-
-    def start_server():
-        try:
-            uvicorn.run(fastapi_app, host="127.0.0.1", port=18520, log_level="warning")
-        except Exception as e:
-            log_crash(f'Server error: {e}\n{traceback.format_exc()}')
-
-    # Start FastAPI in background thread
-    server_thread = threading.Thread(target=start_server, daemon=True)
-    server_thread.start()
-    time.sleep(2.0)
-    log_crash('Server thread started, waiting for Kivy...')
-
+    heartbeat('Server imports OK')
 except Exception as e:
-    log_crash(f'Server import/start error: {e}\n{traceback.format_exc()}')
+    heartbeat(f'Server import FAILED: {e}\n{traceback.format_exc()}')
+    show_android_error('Import Error', f'Failed to import server:\n{e}')
     raise
 
+# --- Start server thread ---
+def start_server():
+    try:
+        heartbeat('Uvicorn starting...')
+        uvicorn.run(fastapi_app, host="127.0.0.1", port=18520, log_level="warning")
+    except Exception as e:
+        heartbeat(f'Uvicorn error: {e}\n{traceback.format_exc()}')
 
-try:
-    from kivy.app import App
-    from kivy.utils import platform
-    from kivy.logger import Logger
+server_thread = threading.Thread(target=start_server, daemon=True)
+server_thread.start()
+time.sleep(2.0)
+heartbeat('Server thread started')
 
-    class BiliSummaryApp(App):
-        def build(self):
-            from kivy.uix.widget import Widget
-            log_crash('Kivy build() called')
-            return Widget()
+# --- Start Kivy ---
+heartbeat('Importing Kivy...')
+from kivy.app import App
+from kivy.utils import platform
+from kivy.logger import Logger
 
-        def on_start(self):
-            log_crash(f'Kivy on_start() called, platform={platform}')
-            if platform == 'android':
-                try:
-                    self._setup_android_webview()
-                except Exception as e:
-                    log_crash(f'WebView setup error: {e}\n{traceback.format_exc()}')
-                    raise
-            else:
-                import webbrowser
-                webbrowser.open('http://127.0.0.1:18520')
-                Logger.info("BiliSummary: http://127.0.0.1:18520")
+heartbeat(f'Kivy imported, platform={platform}')
 
-        def _setup_android_webview(self):
-            log_crash('Setting up Android WebView...')
-            from jnius import autoclass, cast
+class BiliSummaryApp(App):
+    def build(self):
+        heartbeat('build() called')
+        from kivy.uix.widget import Widget
+        return Widget()
 
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            activity = PythonActivity.mActivity
-            log_crash(f'Got activity: {activity}')
+    def on_start(self):
+        heartbeat(f'on_start(), platform={platform}')
+        if platform == 'android':
+            self._setup_android_webview()
+        else:
+            import webbrowser
+            webbrowser.open('http://127.0.0.1:18520')
+            Logger.info("BiliSummary: http://127.0.0.1:18520")
 
-            # Ensure WebView is created on the UI thread
-            WebView = autoclass('android.webkit.WebView')
-            WebViewClient = autoclass('android.webkit.WebViewClient')
-            WebSettings = autoclass('android.webkit.WebSettings')
+    def _setup_android_webview(self):
+        heartbeat('WebView setup starting...')
+        from jnius import autoclass
 
-            # Run WebView setup on the UI thread for Android 14+ compatibility
-            def create_webview():
-                log_crash('Creating WebView on UI thread...')
-                webview = WebView(activity)
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        activity = PythonActivity.mActivity
+        heartbeat(f'Got activity OK')
 
-                settings = webview.getSettings()
-                settings.setJavaScriptEnabled(True)
-                settings.setDomStorageEnabled(True)
-                settings.setAllowFileAccess(True)
-                settings.setAllowFileAccessFromFileURLs(True)
-                settings.setAllowUniversalAccessFromFileURLs(True)
-                settings.setMixedContentMode(
-                    autoclass('android.webkit.WebSettings').MIXED_CONTENT_ALWAYS_ALLOW
-                )
-                # Android 14+ WebView requires these for local network access
-                settings.setBlockNetworkLoads(False)
-                settings.setBlockNetworkImage(False)
+        WebView = autoclass('android.webkit.WebView')
+        WebViewClient = autoclass('android.webkit.WebViewClient')
+        heartbeat('WebView classes loaded')
 
-                webview.setWebViewClient(WebViewClient())
-                webview.loadUrl('http://127.0.0.1:18520')
-                log_crash('WebView created, loading URL...')
+        webview = WebView(activity)
+        heartbeat('WebView created')
 
-                activity.setContentView(webview)
-                log_crash('setContentView done')
+        settings = webview.getSettings()
+        settings.setJavaScriptEnabled(True)
+        settings.setDomStorageEnabled(True)
+        settings.setAllowFileAccess(True)
+        settings.setMixedContentMode(
+            autoclass('android.webkit.WebSettings').MIXED_CONTENT_ALWAYS_ALLOW
+        )
+        heartbeat('WebView settings done')
 
-            try:
-                # Try running on UI thread first (required on some Android 14 devices)
-                activity.runOnUiThread(create_webview)
-            except Exception as e:
-                log_crash(f'runOnUiThread failed: {e}, trying direct...')
-                create_webview()
+        webview.setWebViewClient(WebViewClient())
+        webview.loadUrl('http://127.0.0.1:18520')
+        heartbeat('WebView loading URL')
 
-    if __name__ == '__main__':
-        log_crash('Starting BiliSummaryApp...')
-        BiliSummaryApp().run()
+        activity.setContentView(webview)
+        heartbeat('setContentView done - WebView should be visible')
 
-except ImportError as e:
-    log_crash(f'Kivy import error: {e}')
-    # Kivy not installed (desktop dev without Android SDK)
-    import webbrowser
-    webbrowser.open('http://127.0.0.1:18520')
-    Logger.info("BiliSummary: http://127.0.0.1:18520")
-    Logger.info("(Kivy not installed, using browser)")
 
-except Exception as e:
-    log_crash(f'Fatal error: {e}\n{traceback.format_exc()}')
-    raise
+if __name__ == '__main__':
+    heartbeat('Calling BiliSummaryApp().run()...')
+    BiliSummaryApp().run()
