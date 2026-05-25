@@ -37,8 +37,13 @@ jobs:
           restore-keys: buildozer-
 
       - name: Build APK
-        run: buildozer android debug
+        run: |
+          yes | buildozer android debug 2>&1 | tee build-log.txt
         timeout-minutes: 60
+
+      - name: Dump build log on failure
+       if: failure()
+       run: tail -300 build-log.txt || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
