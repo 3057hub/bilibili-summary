@@ -29,7 +29,7 @@ version.code = 1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3==3.11.15,hostpython3==3.11.15,kivy,fastapi,annotated_doc,uvicorn,anthropic,bilibili-api-python,aiohttp,python-dotenv,toml,pydantic,starlette,anyio,httptools
+requirements = python3==3.11.15,hostpython3==3.11.15,kivy,fastapi,annotated_doc,uvicorn,anthropic,bilibili-api-python,aiohttp,python-dotenv,toml,pydantic,starlette,anyio
 
 # (str) Supported orientations
 # one of landscape, portrait or all
