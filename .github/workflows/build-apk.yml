@@ -52,12 +52,21 @@ jobs:
           echo "=== BUILD LOG (last 300 lines) ==="
           tail -300 build-log.txt || true
 
+      - name: Locate APK
+        run: |
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" -type f 2>/dev/null || true
+          mkdir -p bin
+          # Buildozer may put APK in .buildozer tree, copy to bin/
+          cp .buildozer/android/platform/build-arm64-v8a/dists/bilisummary*/bin/*.apk bin/ 2>/dev/null || true
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: BiliSummary-debug
           path: |
             bin/*.apk
+            .buildozer/android/platform/build-arm64-v8a/dists/**/*.apk
           retention-days: 30
 
       - name: Upload build log artifact
