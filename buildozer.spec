@@ -29,7 +29,7 @@ version.code = 1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,fastapi,uvicorn,anthropic,bilibili-api-python,aiohttp,python-dotenv,toml,pydantic,starlette,anyio,httptools
+requirements = python3==3.11.15,hostpython3==3.11.15,kivy,fastapi,uvicorn,anthropic,bilibili-api-python,aiohttp,python-dotenv,toml,pydantic,starlette,anyio,httptools
 
 # (str) Supported orientations
 # one of landscape, portrait or all
@@ -45,7 +45,7 @@ presplash.filename = icon.png
 icon.filename = icon.png
 
 # (str) The Android arch to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-android.arch = arm64-v8a
+android.archs = arm64-v8a
 
 # (int) Target Android API
 android.api = 31
