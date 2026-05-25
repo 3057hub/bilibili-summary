@@ -25,15 +25,19 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
 
-      - name: Install Gradle
+      - name: Setup Gradle
+        working-directory: android
         run: |
-          sudo apt-get install -y gradle
+          # Download Gradle 8.5 and generate wrapper
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip
+          gradle-8.5/bin/gradle wrapper --gradle-version 8.5
 
       - name: Build APK
         working-directory: android
         run: |
           set -o pipefail
-          gradle assembleDebug 2>&1 | tee build-log.txt
+          ./gradlew assembleDebug 2>&1 | tee build-log.txt
         timeout-minutes: 30
 
       - name: Dump build log on failure
