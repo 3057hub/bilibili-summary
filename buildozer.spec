@@ -65,6 +65,9 @@ android.permissions = INTERNET
 # (bool) Skip the automatic update of Android SDK
 android.skip_update = False
 
+# (bool) Accept Android SDK License
+android.accept_sdk_license = True
+
 # (bool) Allow the app to be installed on external storage
 android.allow_backup = True
 
