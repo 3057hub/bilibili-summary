@@ -33,7 +33,10 @@ def _new_temp_path(suffix: str) -> str:
 @router.post("/asr-summarize/{bvid}")
 async def asr_summarize(bvid: str, output_subdir: str = ""):
     """Download audio → GLM-ASR transcription → LLM summary via SSE."""
-    from routes.deps import credential, ai_client, DEFAULT_MODEL
+    from routes.deps import credential, ai_client, DEFAULT_MODEL, is_asr_enabled
+
+    if not is_asr_enabled():
+        return JSONResponse(status_code=503, content={"error": "语音识别功能未启用。请在 config.toml 中设置 enable_asr = true 并自行配置 ASR API Key。"})
 
     if not credential:
         return JSONResponse(status_code=401, content={"error": "未登录 Bilibili"})

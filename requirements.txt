@@ -4,6 +4,5 @@ python-dotenv
 toml
 fastapi
 uvicorn
-pywebview
 aiohttp
-av
+kivy

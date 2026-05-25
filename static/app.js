@@ -12,10 +12,18 @@ function initTheme() {
 
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
+    const iconHtml = `<i data-lucide="${theme === 'dark' ? 'moon' : 'sun'}" class="lucide-icon"></i>`;
+
     const btn = document.getElementById('themeToggle');
     if (btn) {
-        btn.innerHTML = `<i data-lucide="${theme === 'dark' ? 'moon' : 'sun'}" class="lucide-icon"></i>`;
+        btn.innerHTML = iconHtml;
         if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [btn] });
+    }
+
+    const mobileBtn = document.getElementById('mobileThemeToggle');
+    if (mobileBtn) {
+        mobileBtn.innerHTML = iconHtml;
+        if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [mobileBtn] });
     }
 }
 
@@ -35,6 +43,7 @@ let currentBrowseItems = [];
 let currentBrowseType = '';
 let favViewMode = localStorage.getItem('bilisummary-fav-view') || 'thumb';
 let currentFavVideos = [];
+let asrEnabled = false;
 
 const STATUS_META = {
     processing: { label: '处理中', tone: 'info' },
@@ -110,11 +119,25 @@ function renderState(container, {
 }
 
 // ---------------------------------------------------------------------------
-// Navigation — static pages
+// Navigation — static pages (sidebar + bottom tabs)
 // ---------------------------------------------------------------------------
 document.querySelectorAll('.nav-item[data-page]').forEach(item => {
     item.addEventListener('click', () => {
         switchToPage(item.dataset.page, item);
+    });
+});
+
+// Bottom tab navigation
+document.querySelectorAll('.tab-item[data-page]').forEach(tab => {
+    tab.addEventListener('click', () => {
+        // When tapping "收藏" tab, show fav-page or prompt login
+        const pageId = tab.dataset.page;
+        if (pageId === 'fav-page' && !currentFavId) {
+            // No favorite selected yet — try to navigate to browse instead
+            switchToPage(pageId, null);
+        } else {
+            switchToPage(pageId, null);
+        }
     });
 });
 
@@ -128,6 +151,19 @@ function switchToPage(pageId, navEl) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById(pageId).classList.add('active');
     updateGlobalBackButton();
+
+    // Sync bottom tabs
+    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.tab-item[data-page="${pageId}"]`);
+    if (tab) tab.classList.add('active');
+
+    // Mobile pickers
+    if (pageId === 'browse-page') {
+        renderMobileBrowsePicker();
+    }
+    if (pageId === 'fav-page') {
+        renderMobileFavPicker();
+    }
 }
 
 function updateGlobalBackButton() {
@@ -138,6 +174,12 @@ function updateGlobalBackButton() {
     const visible = !!(browseReading || favReading);
     btn.classList.toggle('active', visible);
     btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+
+    // Hide bottom tabs when reading on mobile
+    const bottomTabs = document.getElementById('bottomTabs');
+    if (bottomTabs) {
+        bottomTabs.style.display = visible ? 'none' : '';
+    }
 }
 
 function handleGlobalBack() {
@@ -167,6 +209,7 @@ async function checkStatus() {
         const text = document.getElementById('statusText');
         const loginBtn = document.getElementById('loginBtn');
         const logoutBtn = document.getElementById('logoutBtn');
+        asrEnabled = !!data.asr_enabled;
         if (data.logged_in) {
             dot.className = 'status-dot online';
             text.textContent = 'Bilibili 已登录';
@@ -433,6 +476,11 @@ async function loadSidebarBrowse() {
         }
         container.innerHTML = html;
         lucide.createIcons({ nodes: [container] });
+
+        // Refresh mobile browse picker if browse page is active
+        if (document.getElementById('browse-page').classList.contains('active')) {
+            renderMobileBrowsePicker();
+        }
     } catch (err) {
         renderState(container, {
             type: 'error',
@@ -447,6 +495,93 @@ loadSidebarBrowse();
 
 function toggleParent(el) {
     el.classList.toggle('expanded');
+}
+
+// ---------------------------------------------------------------------------
+// Mobile Browse Picker
+// ---------------------------------------------------------------------------
+function renderMobileBrowsePicker() {
+    const container = document.getElementById('mobileBrowsePicker');
+    if (!container) return;
+
+    if (!summariesData || !summariesData.categories || summariesData.categories.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '<div class="mobile-category-chips">';
+    for (const cat of summariesData.categories) {
+        if (cat.type === 'users') {
+            for (const group of cat.groups) {
+                html += `<span class="mobile-category-chip" data-action="user" data-uid="${escapeAttr(group.uid)}">${escapeHtml(group.display_name)}<span class="chip-count">${group.count}</span></span>`;
+            }
+        } else {
+            const iconMap = { standalone: '🔗', favorites: '⭐' };
+            html += `<span class="mobile-category-chip" data-action="category" data-type="${cat.type}"><i data-lucide="${cat.icon}" class="lucide-icon icon-xs"></i> ${escapeHtml(cat.label)}<span class="chip-count">${cat.count}</span></span>`;
+        }
+    }
+    html += '</div>';
+    container.innerHTML = html;
+    lucide.createIcons({ nodes: [container] });
+
+    // Wire click handlers
+    container.querySelectorAll('.mobile-category-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            container.querySelectorAll('.mobile-category-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            const action = chip.dataset.action;
+            if (action === 'user') {
+                showUserVideos(chip.dataset.uid, null);
+            } else if (action === 'category') {
+                showCategory(chip.dataset.type, null);
+            }
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Mobile Favorites Folder Picker
+// ---------------------------------------------------------------------------
+function renderMobileFavPicker() {
+    const container = document.getElementById('mobileFavPicker');
+    if (!container) return;
+
+    const folders = [];
+    const defaultEl = document.querySelector('.fav-folder-item[data-fav-id]');
+    if (defaultEl) {
+        folders.push({ id: parseInt(defaultEl.dataset.favId), title: defaultEl.dataset.favTitle, isDefault: true });
+    }
+    document.querySelectorAll('.fav-folder-list .fav-folder-item[data-fav-id]').forEach(el => {
+        folders.push({ id: parseInt(el.dataset.favId), title: el.dataset.favTitle, isDefault: false });
+    });
+
+    if (folders.length === 0) {
+        container.innerHTML = `
+            <div class="mobile-login-area">
+                <span class="mobile-status-row"><span class="mobile-status-dot offline"></span> 未登录 Bilibili</span>
+                <button class="mobile-login-btn" onclick="startLogin()"><i data-lucide="key-round" class="lucide-icon icon-xs"></i> 登录</button>
+            </div>
+        `;
+        lucide.createIcons({ nodes: [container] });
+        return;
+    }
+
+    const currentId = currentFavId || '';
+    container.innerHTML = `
+        <select class="mobile-folder-select" id="mobileFavSelect">
+            <option value="">选择收藏夹...</option>
+            ${folders.map(f => `<option value="${f.id}" ${f.id === currentId ? 'selected' : ''}>${escapeHtml(f.title)} ${f.isDefault ? '(默认)' : ''}</option>`).join('')}
+        </select>
+    `;
+
+    document.getElementById('mobileFavSelect').addEventListener('change', function () {
+        const favId = parseInt(this.value);
+        if (favId) {
+            const el = document.querySelector(`.fav-folder-item[data-fav-id="${favId}"]`);
+            const title = el ? el.dataset.favTitle : '';
+            selectFavoriteFolder(favId, title);
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -753,7 +888,7 @@ async function openSummary(encodedPath) {
             showOpen: true,
             showUnfav: currentBrowseType === 'favorites' && !!defaultFavId,
             enableRetry: true,
-            enableAsr: false,
+            enableAsr: asrEnabled,
         });
 
         setupExternalLinks(readingContent);
@@ -1215,6 +1350,11 @@ async function loadFavoriteFolders() {
             selectFavoriteFolder(favId, title);
         });
 
+        // Refresh mobile fav picker if fav page is active
+        if (document.getElementById('fav-page').classList.contains('active')) {
+            renderMobileFavPicker();
+        }
+
     } catch (err) {
         renderState(container, {
             type: 'error',
@@ -1290,6 +1430,10 @@ function selectFavoriteFolder(favId, title) {
     updateGlobalBackButton();
     document.getElementById('favLoadMore').style.display = 'none';
     setFavViewMode(favViewMode);
+
+    // Sync mobile select
+    const mobileSelect = document.getElementById('mobileFavSelect');
+    if (mobileSelect) mobileSelect.value = String(favId);
 
     loadFavoriteVideos(favId, 1, false);
 }
@@ -1631,7 +1775,7 @@ async function showVideoSummary(bvid, path) {
                 showOpen: true,
                 showUnfav: true,
                 enableRetry: true,
-                enableAsr: true,
+                enableAsr: asrEnabled,
             });
 
             readingContent.innerHTML = renderMarkdown(data.content);

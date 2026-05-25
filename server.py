@@ -5,7 +5,14 @@ FastAPI 后端服务器
 """
 
 import os
+import sys
 import asyncio
+
+# Fix emoji printing on Windows (GBK console can't encode emoji)
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 import json
 import time
 import re
@@ -210,7 +217,11 @@ async def index():
 
 @app.get("/api/status")
 async def get_status():
-    return {"logged_in": deps.credential is not None, "ai_configured": deps.ai_client is not None}
+    return {
+        "logged_in": deps.credential is not None,
+        "ai_configured": deps.ai_client is not None,
+        "asr_enabled": deps.is_asr_enabled(),
+    }
 
 
 @app.get("/api/summaries")

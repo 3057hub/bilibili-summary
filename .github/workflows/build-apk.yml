@@ -1,0 +1,48 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git python3 python3-pip python3-dev \
+            openjdk-17-jdk autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 \
+            cmake libffi-dev libssl-dev unzip zip wget \
+            libltdl-dev libbz2-dev libgdbm-dev liblzma-dev \
+            libsqlite3-dev libreadline-dev
+
+      - name: Install Buildozer & Cython
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install cython buildozer
+
+      - name: Cache Buildozer NDK/SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            .buildozer/android/platform
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-
+
+      - name: Build APK
+        run: buildozer android debug
+        timeout-minutes: 60
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BiliSummary-debug
+          path: |
+            bin/*.apk
+          retention-days: 30

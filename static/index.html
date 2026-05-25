@@ -12,6 +12,17 @@
 <body>
     <!-- Floating toast notifications -->
     <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Mobile Top Bar -->
+    <div class="top-bar">
+        <span class="top-bar-title">BiliSummary</span>
+        <div class="top-bar-actions">
+            <button class="top-bar-btn" id="mobileThemeToggle" onclick="toggleTheme()" title="切换主题">
+                <i data-lucide="moon" class="lucide-icon" id="mobileThemeIcon"></i>
+            </button>
+        </div>
+    </div>
+
     <div class="app">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -165,6 +176,7 @@
                     </div>
                 </div>
                 <div class="main-body">
+                    <div class="mobile-folder-picker" id="mobileFavPicker"></div>
                     <div class="video-grid" id="favVideoGrid"></div>
                     <div class="fav-auto-progress" id="favAutoProgress"></div>
                     <div class="load-more-container is-hidden" id="favLoadMore">
@@ -187,7 +199,7 @@
                     <div class="browse-header-row">
                         <div>
                             <h2 id="browseTitle"><i data-lucide="book-open" class="lucide-icon"></i> 浏览总结</h2>
-                            <p id="browseSubtitle">选择左侧分类查看</p>
+                            <p id="browseSubtitle">选择分类查看</p>
                         </div>
                         <div class="browse-view-toggle" id="browseViewToggle">
                             <button class="browse-view-btn active" data-view="thumb" data-tip="缩略图视图" aria-label="缩略图视图" onclick="setBrowseViewMode('thumb', this)">
@@ -202,6 +214,7 @@
                     </div>
                 </div>
                 <div class="main-body">
+                    <div class="mobile-category-picker" id="mobileBrowsePicker"></div>
                     <div id="browseList"></div>
                     <div class="reading-view reading-panel" id="readingView">
                         <div class="reading-header">
@@ -225,7 +238,7 @@
                         <div class="form-group">
                             <label>API Base URL</label>
                             <input class="input" id="settingsBaseUrl"
-                                placeholder="https://open.bigmodel.cn/api/anthropic">
+                                placeholder="https://api.deepseek.com/anthropic">
                         </div>
                         <div class="form-group">
                             <label>API Token</label>
@@ -277,6 +290,26 @@
             </div>
         </div>
     </div>
+
+    <!-- Mobile Bottom Tab Bar -->
+    <nav class="bottom-tabs" id="bottomTabs">
+        <div class="tab-item active" data-page="url-page">
+            <span class="tab-icon"><i data-lucide="link" class="lucide-icon"></i></span>
+            <span class="tab-label">总结</span>
+        </div>
+        <div class="tab-item" data-page="fav-page">
+            <span class="tab-icon"><i data-lucide="star" class="lucide-icon"></i></span>
+            <span class="tab-label">收藏</span>
+        </div>
+        <div class="tab-item" data-page="browse-page">
+            <span class="tab-icon"><i data-lucide="book-open" class="lucide-icon"></i></span>
+            <span class="tab-label">浏览</span>
+        </div>
+        <div class="tab-item" data-page="settings-page">
+            <span class="tab-icon"><i data-lucide="settings" class="lucide-icon"></i></span>
+            <span class="tab-label">设置</span>
+        </div>
+    </nav>
 
     <script src="/static/app.js"></script>
     <script>

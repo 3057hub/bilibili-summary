@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv, set_key
+import toml
 import anthropic
 from bilibili_api import video
 from bilibili_api.utils.network import Credential
@@ -29,11 +30,28 @@ load_dotenv(str(DATA_DIR / '.env.local'))
 
 
 # ---------------------------------------------------------------------------
+# Android config
+# ---------------------------------------------------------------------------
+_android_config: dict = {}
+try:
+    _config_path = BUNDLE_DIR / "config.toml"
+    if _config_path.exists():
+        _cfg = toml.loads(_config_path.read_text(encoding="utf-8"))
+        _android_config = _cfg.get("android", {})
+except Exception:
+    pass
+
+
+def is_asr_enabled() -> bool:
+    return _android_config.get("enable_asr", False)
+
+
+# ---------------------------------------------------------------------------
 # Global state
 # ---------------------------------------------------------------------------
 credential: Optional[Credential] = None
 ai_client: Optional[anthropic.AsyncAnthropic] = None
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "GLM-4-FlashX-250414")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "deepseek-chat")
 
 
 def init_credential():

@@ -158,7 +158,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "GLM-4-FlashX-250414")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "deepseek-chat")
 
 
 async def summarize_with_claude(subtitle: str, title: str, client: anthropic.AsyncAnthropic, model: str = None) -> tuple[str, float]:
@@ -208,7 +208,11 @@ async def summarize_with_claude(subtitle: str, title: str, client: anthropic.Asy
             )
             t_end = time.time()
             duration = t_end - t_start
-            return message.content[0].text, duration
+            # DeepSeek V4 Pro / Claude Opus 4 return ThinkingBlock alongside TextBlock
+            for block in message.content:
+                if hasattr(block, 'text'):
+                    return block.text, duration
+            return "⚠️ 生成总结失败: 响应中没有文本内容", 0.0
             
         except anthropic.RateLimitError as e:
             if attempt < max_retries - 1:

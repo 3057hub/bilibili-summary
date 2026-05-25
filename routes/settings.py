@@ -24,7 +24,7 @@ async def get_settings():
     token = os.getenv('ANTHROPIC_AUTH_TOKEN', '')
     masked = token[:8] + '***' + token[-4:] if len(token) > 12 else '***'
     return {
-        "base_url": os.getenv('ANTHROPIC_BASE_URL', ''),
+        "base_url": os.getenv('ANTHROPIC_BASE_URL', 'https://api.deepseek.com/anthropic'),
         "auth_token_masked": masked,
         "default_model": DEFAULT_MODEL,
     }
@@ -77,6 +77,8 @@ async def list_models():
         return JSONResponse(status_code=400, content={"error": "API 未配置"})
 
     models_url = base_url.rstrip('/')
+    if models_url.endswith('/anthropic'):
+        models_url = models_url[:-10]
     if models_url.endswith('/v1'):
         models_url = models_url[:-3]
     models_url = models_url.rstrip('/') + '/v1/models'
